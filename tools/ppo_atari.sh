@@ -3,7 +3,7 @@
 # ----------------------------
 # 配置参数
 # ----------------------------
-ALGO="CustomPPO"
+ALGO="PPO"
 HPARAM_FILE="/root/dae/params/CustomPPO_atari.yml"
 ENVS="ALE/Breakout-v5"
 THREADS=32

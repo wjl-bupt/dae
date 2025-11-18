@@ -162,6 +162,11 @@ if __name__ == "__main__":
         if not callable(v):
             print(k, v)
     
+    if args.threads != hparam['nenvs']:
+        args.threads = min(hparam['nenvs'], args.threads)
+        hparam['nenvs'] = args.threads
+        
+    
     print(f"N_ENVS: {nenvs}    SEED: {args.seed}")
     print("List of envs: ", args.envs)
     for _env in args.envs:
