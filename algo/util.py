@@ -4,9 +4,9 @@ from typing import Optional
 import time
 import numpy as np
 
-import gym
-from gym import spaces
-from gym.envs import register
+import gymnasium as gym
+from gymnasium import spaces
+from gymnasium.envs import register
 from minatar import Environment
 
 from stable_baselines3.common.utils import get_linear_fn

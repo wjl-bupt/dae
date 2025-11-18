@@ -5,7 +5,7 @@ import numpy as np
 import torch as th
 import warnings
 
-from gym import spaces
+from gymnasium import spaces
 from algo.custom_ppo.policy import CustomActorCriticPolicy
 from algo.custom_ppo.buffer import CustomBuffer
 
@@ -104,7 +104,8 @@ class CustomPPO(OnPolicyAlgorithm):
             policy_kwargs=policy_kwargs,
             verbose=verbose,
             device=device,
-            create_eval_env=create_eval_env,
+            # NOTE(junweiluo)： 新版本的sb需要注释掉这个参数
+            # create_eval_env=create_eval_env,
             seed=seed,
             _init_setup_model=False,
             supported_action_spaces=(spaces.Discrete,),
@@ -569,10 +570,11 @@ class CustomPPO(OnPolicyAlgorithm):
             total_timesteps=total_timesteps,
             callback=callback,
             log_interval=log_interval,
-            eval_env=eval_env,
-            eval_freq=eval_freq,
-            n_eval_episodes=n_eval_episodes,
+            # NOTE(junweiluo): 注释掉这个参数
+            # eval_env=eval_env,
+            # eval_freq=eval_freq,
+            # n_eval_episodes=n_eval_episodes,
             tb_log_name=tb_log_name,
-            eval_log_path=eval_log_path,
+            # eval_log_path=eval_log_path,
             reset_num_timesteps=reset_num_timesteps,
         )

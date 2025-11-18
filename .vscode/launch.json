@@ -1,0 +1,35 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "DAE: Atari",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--algo", "CustomPPO", 
+                "--hparam_file", "/root/dae/params/CustomPPO_atari.yml", 
+                "--envs", "ALE/Breakout-v5", 
+                "--threads", "8"
+            ]
+        },
+
+        {
+            "name": "DAE: MinAtar",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--algo", "CustomPPO", 
+                "--hparam_file", "/root/dae/params/CustomPPO_minatar.yml", 
+                "--envs", "", 
+                "--threads", "1"
+            ]
+        }
+    ]
+}

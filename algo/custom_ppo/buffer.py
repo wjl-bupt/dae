@@ -2,10 +2,15 @@ from typing import Optional, Union, List, NamedTuple, Generator
 from stable_baselines3.common.buffers import BaseBuffer
 from stable_baselines3.common.type_aliases import RolloutBufferSamples
 
-from gym import spaces
+from gymnasium import spaces
 
 import numpy as np
 import torch as th
+
+import gymnasium as gym
+import ale_py
+
+gym.register_envs(ale_py)
 
 
 class CustomSamples(NamedTuple):

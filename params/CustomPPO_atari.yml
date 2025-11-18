@@ -1,5 +1,5 @@
 advantage_normalization: true
-batch_size: 256
+batch_size: 4
 clip_range:
     init: 0.1
     final: 0
@@ -16,4 +16,4 @@ n_epochs: 6
 n_steps: 128
 shared: true
 features_extractor: "nature"
-nenvs: 1024
+nenvs: 8

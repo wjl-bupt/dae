@@ -108,11 +108,14 @@ def get_env(e, envs, args, logdir):
         frameskip = 1
     else:
         env = make_atari_env(
-            env_id=f"{_env}NoFrameskip-v4",
+            # env_id=f"{_env}NoFrameskip-v4",
+            env_id=f"{_env}",
             n_envs=nenvs,
             seed=args.seed,
             vec_env_cls=CustomVecEnv,
             vec_env_kwargs=dict(threads=args.threads),
+            # NOTE(junweiluo): 训练时不需要human渲染
+            # env_kwargs={"render_mode": "rgb_array"},
         )
         env = VecLogger(VecFrameStack(env, 4), logdir=logdir)
         frameskip = 4

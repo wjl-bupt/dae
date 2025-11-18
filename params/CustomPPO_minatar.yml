@@ -16,4 +16,4 @@ n_epochs: 6
 n_steps: 128
 shared: true
 features_extractor: "minatar"
-nenvs: 1024
+nenvs: 8

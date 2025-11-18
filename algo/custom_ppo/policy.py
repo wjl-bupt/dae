@@ -2,8 +2,8 @@ import torch as th
 import torch.nn as nn
 from functools import partial
 from typing import Optional, Tuple, Type
-import numpy as np
-import gym
+import numpy as np 
+import gymnasium as gym
 from stable_baselines3.common.preprocessing import preprocess_obs
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.type_aliases import Schedule
@@ -34,7 +34,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             use_sde=False,
             log_std_init=0.0,
             full_std=True,
-            sde_net_arch=None,
+            # NOTE(junweiluo): 注释掉这个参数
+            # sde_net_arch=None,
             use_expln=False,
             squash_output=False,
             features_extractor_class=features_extractor_class,

@@ -4,7 +4,7 @@ from functools import partial
 import numpy as np
 import torch as th
 
-from gym import spaces
+from gymnasium import spaces
 from algo.qv_ppo.policy import QVActorCriticPolicy
 from algo.custom_ppo.buffer import CustomBuffer
 

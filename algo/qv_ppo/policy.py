@@ -3,7 +3,7 @@ import torch.nn as nn
 from functools import partial
 from typing import Optional, Tuple, Type
 import numpy as np
-import gym
+import gymnasium as gym
 from stable_baselines3.common.preprocessing import preprocess_obs
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.type_aliases import Schedule
