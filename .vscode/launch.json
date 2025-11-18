@@ -12,7 +12,7 @@
             "console": "integratedTerminal",
             "args": [
                 "--algo", "CustomPPO", 
-                "--hparam_file", "/root/dae/params/CustomPPO_atari.yml", 
+                "--hparam_file", "/root/dae/params/CustomPPO_atari_debugger.yml", 
                 "--envs", "ALE/Breakout-v5", 
                 "--threads", "8"
             ]
@@ -25,10 +25,13 @@
             "program": "${workspaceFolder}/train.py",
             "console": "integratedTerminal",
             "args": [
-                "--algo", "CustomPPO", 
-                "--hparam_file", "/root/dae/params/CustomPPO_minatar.yml", 
-                "--envs", "", 
-                "--threads", "1"
+                "--algo", "PPO", 
+                "--hparam_file", "/root/dae/params/PPO_atari_debugger.yml", 
+                "--envs", "ALE/Breakout-v5", 
+                "--threads", "8",
+                "--use_wandb",
+                "--logging",
+                "--project", "callback-test",
             ]
         }
     ]

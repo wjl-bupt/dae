@@ -69,6 +69,11 @@ class QVPPO(OnPolicyAlgorithm):
         seed: Optional[int] = None,
         device: Union[th.device, str] = "auto",
         _init_setup_model: bool = True,
+        # NOTE(junweiluo):
+        # use_wandb: bool = False,
+        # wandb_project: Optional[str] = None,
+        # wandb_run_name: Optional[str] = None,
+        # wandb_group_name : Optional[str] = None,
     ):
 
         super(QVPPO, self).__init__(

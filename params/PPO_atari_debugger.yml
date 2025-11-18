@@ -1,4 +1,4 @@
-batch_size: 32
+batch_size: 4
 clip_range:
     init: 0.1
     final: 0
@@ -12,4 +12,7 @@ learning_rate:
 n_epochs: 4
 n_steps: 128
 features_extractor: "nature"
-nenvs: 32
+nenvs: 8
+# NOTE(junweiluo): extra param
+# use_wandb: true
+# wandb_project: "dae"

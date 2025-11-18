@@ -1,0 +1,7 @@
+wandb/*
+logs/*
+__pycache__/
+*.py[cod]
+
+# 虚拟环境
+.venv/

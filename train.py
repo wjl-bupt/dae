@@ -1,9 +1,10 @@
 from stable_baselines3 import PPO
 from stable_baselines3.common.torch_layers import NatureCNN
 from stable_baselines3.common.env_util import make_atari_env, make_vec_env
-from stable_baselines3.common.vec_env import VecFrameStack
+from stable_baselines3.common.vec_env import VecFrameStack, VecMonitor
+from wandb.integration.sb3 import WandbCallback
 
-from algo.util import VecLogger, VecTranspose, register_envs, get_fn
+from algo.util import VecLogger, VecTranspose, register_envs, get_fn, WanDBCallBack
 from algo.net import NatureCNN2X, MinAtarCNN, MinAtarCNN4X, IMPALACNN
 from algo.custom_ppo.ppo import CustomPPO
 from algo.custom_ppo.policy import CustomActorCriticPolicy
@@ -12,6 +13,10 @@ from algo.custom_vec_env import CustomVecEnv
 from algo.qv_ppo.ppo import QVPPO
 from algo.qv_ppo.policy import QVActorCriticPolicy
 
+from time import time
+from datetime import datetime
+
+import wandb
 import argparse
 import numpy as np
 import os
@@ -49,6 +54,11 @@ def get_args():
         default=1,
         help="Number of threads for asynchronous environment steps",
     )
+
+    # NOTE(junweiluo): wandb param
+    parser.add_argument("--use_wandb", default=False, action="store_true", help="use wandb to log")
+    parser.add_argument("--project", default=None, type=str, help="wandb project name")
+    
     return parser.parse_args()
 
 
@@ -151,7 +161,7 @@ if __name__ == "__main__":
     for k, v in hparam.items():
         if not callable(v):
             print(k, v)
-
+    
     print(f"N_ENVS: {nenvs}    SEED: {args.seed}")
     print("List of envs: ", args.envs)
     for _env in args.envs:
@@ -159,12 +169,40 @@ if __name__ == "__main__":
         logdir = f"./logs/{_env}/{args.run_id}" if args.logging else None
 
         env, frameskip = get_env(_env, nenvs, args, logdir)
+        env = VecMonitor(env)
+        
 
+        if args.use_wandb:
+            time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
+            cur_timestamp = int(time())
+            if args.algo == "PPO":
+                use_full_action = False
+            else:
+                use_full_action = hparam['full_action']
+            run_name = f"{args.algo}_{_env}_{args.seed}_fullact{use_full_action}_{time_str}_{cur_timestamp}"
+            group_name = f"{args.algo}_{_env}_{args.seed}_fullact{use_full_action}"
+
+            
+            wandb.init(
+                project = args.project,
+                name = run_name,
+                group = group_name,
+                sync_tensorboard = True,
+                monitor_gym=True,
+                save_code=True,
+            )
+            wandb_callback = WandbCallback(
+                verbose=2,
+            )
+        else:
+            wandb_callback = None
+            
+            
         algo = algo_cls(
             policy, env, verbose=1, tensorboard_log=logdir, seed=args.seed, **hparam
         )
 
-        algo.learn(args.steps)
+        algo.learn(args.steps, callback=wandb_callback)
         finish(env, algo, args.steps * frameskip)
         overall = np.mean(env.scores)
         last = np.mean(env.scores[-100:])

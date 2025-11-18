@@ -1,9 +1,12 @@
 from typing import Any, Dict, Optional, Type, Union
 from functools import partial
 
+
 import numpy as np
 import torch as th
 import warnings
+import wandb
+
 
 from gymnasium import spaces
 from algo.custom_ppo.policy import CustomActorCriticPolicy
@@ -86,8 +89,21 @@ class CustomPPO(OnPolicyAlgorithm):
         seed: Optional[int] = None,
         device: Union[th.device, str] = "auto",
         _init_setup_model: bool = True,
-    ):
-
+        # NOTE(junweiluo):
+        # use_wandb: bool = False,
+        # wandb_project: Optional[str] = None,
+        # wandb_run_name: Optional[str] = None,
+        # wandb_group_name : Optional[str] = None,
+        
+    ):  
+        # NOTE(junweiluo): use wandb to log experiment metrics.
+        # if use_wandb:
+        #     wandb.init(
+        #         project = wandb_project,
+        #         name = wandb_run_name,
+        #         group = wandb_group_name,
+        #         sync_tensorboard = True,
+        #     )
         super(CustomPPO, self).__init__(
             policy,
             env,
