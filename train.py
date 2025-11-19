@@ -179,18 +179,18 @@ if __name__ == "__main__":
                 use_full_action = False
             else:
                 use_full_action = hparam['full_action']
-            run_name = f"{args.algo}_{_env}_{args.seed}_fullact{use_full_action}_{time_str}_{cur_timestamp}"
-            group_name = f"{args.algo}_{_env}_{args.seed}_fullact{use_full_action}"
+            run_name = f"{args.algo}_{_env}_seed{args.seed}_fullact{use_full_action}_{time_str}_{cur_timestamp}"
+            group_name = f"{args.algo}_{_env}_fullact{use_full_action}"
 
             
-            wandb.init(
-                project = args.project,
-                name = run_name,
-                group = group_name,
-                sync_tensorboard = True,
-                monitor_gym=True,
-                save_code=True,
-            )
+            run = wandb.init(
+                    project = args.project,
+                    name = run_name,
+                    group = group_name,
+                    sync_tensorboard = True,
+                    monitor_gym=True,
+                    save_code=True,
+                )
             wandb_callback = WandbCallback(
                 verbose=2,
             )
