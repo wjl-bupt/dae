@@ -6,8 +6,8 @@ from wandb.integration.sb3 import WandbCallback
 
 from algo.util import VecLogger, VecTranspose, register_envs, get_fn, WanDBCallBack
 from algo.net import NatureCNN2X, MinAtarCNN, MinAtarCNN4X, IMPALACNN
-from algo.custom_ppo.ppo import CustomPPO
-from algo.custom_ppo.policy import CustomActorCriticPolicy
+# from algo.custom_ppo.ppo import CustomPPO
+# from algo.custom_ppo.policy import CustomActorCriticPolicy
 from algo.custom_vec_env import CustomVecEnv
 
 from algo.qv_ppo.ppo import QVPPO
@@ -21,6 +21,13 @@ import argparse
 import numpy as np
 import os
 import yaml
+import gymnasium as gym
+from gymnasium.wrappers import (
+    FlattenObservation, RecordEpisodeStatistics, ClipAction, 
+    NormalizeObservation, TransformObservation,
+    NormalizeReward, TransformReward
+)
+
 
 
 def get_args():
@@ -59,6 +66,10 @@ def get_args():
     parser.add_argument("--use_wandb", default=False, action="store_true", help="use wandb to log")
     parser.add_argument("--project", default=None, type=str, help="wandb project name")
     
+    # NOTE(junweiluo): mujoco implement
+    parser.add_argument("--continous", default=False, action="store_true", help="continous task!")
+    
+    
     return parser.parse_args()
 
 
@@ -94,8 +105,8 @@ def load_hparam(hfile):
         elif par["features_extractor"] == "impala":
             hparam["policy_kwargs"]["features_extractor_class"] = IMPALACNN
         else:
-            raise NotImplementedError()
-
+            # NOTE(junweiluo): mujoco use flatten observation
+            pass
     return hparam, par["nenvs"]
 
 
@@ -103,8 +114,33 @@ def get_default_hparam(args):
     print("Using default hyperparameters")
     return load_hparam(f"params/{args.algo}.yml")
 
+# NOTE(junweiluo): add mujoco env maker
+def get_mujoco_env(e, envs, args, logdir):
 
-def get_env(e, envs, args, logdir):
+    # def _make_env():
+    #     env = gym.make(e)
+    #     env = FlattenObservation(env)
+    #     env = RecordEpisodeStatistics(env)
+    #     env = ClipAction(env) 
+    #     env = NormalizeObservation(env)
+    #     env = TransformObservation(env, lambda obs: np.clip(obs, -10, 10), observation_space = env.observation_space)
+    #     env = NormalizeReward(env)
+    #     env = TransformReward(env, lambda reward: np.clip(reward, -10, 10))
+    #     return env
+    
+    # register_envs()
+    env = make_vec_env(
+        env_id=e,
+        n_envs=envs,
+        seed=args.seed,
+        vec_env_cls=CustomVecEnv,
+        vec_env_kwargs=dict(threads=args.threads),
+    )
+    # env = VecNormalize(env, norm_obs=True, norm_reward=True)  # 可选但强烈推荐
+    env = VecLogger(env, logdir)
+    return env, 0
+
+def get_discrete_env(e, envs, args, logdir):
     if "MinAtar" in e:
         register_envs()
         env = make_vec_env(
@@ -124,12 +160,14 @@ def get_env(e, envs, args, logdir):
             seed=args.seed,
             vec_env_cls=CustomVecEnv,
             vec_env_kwargs=dict(threads=args.threads),
-            # NOTE(junweiluo): 训练时不需要human渲染
-            # env_kwargs={"render_mode": "rgb_array"},
         )
         env = VecLogger(VecFrameStack(env, 4), logdir=logdir)
         frameskip = 4
     return env, frameskip
+
+
+# def get_env(e, envs, args, logdir):
+
 
 
 def finish(env, algo, steps):
@@ -143,18 +181,31 @@ def finish(env, algo, steps):
 if __name__ == "__main__":
 
     args = get_args()
-
-    if args.algo == "CustomPPO":
-        algo_cls = CustomPPO
-        policy = CustomActorCriticPolicy
-    elif args.algo == "PPO":
-        algo_cls = PPO
-        policy = "CnnPolicy"
-    elif args.algo == "QVPPO":
-        algo_cls = QVPPO
-        policy = QVActorCriticPolicy
+    if args.continous == False:
+        from algo.custom_ppo.ppo import CustomPPO
+        from algo.custom_ppo.policy import CustomActorCriticPolicy
+        if args.algo == "CustomPPO":
+            algo_cls = CustomPPO
+            policy = CustomActorCriticPolicy
+        elif args.algo == "PPO":
+            algo_cls = PPO
+            policy = "CnnPolicy"
+        elif args.algo == "QVPPO":
+            algo_cls = QVPPO
+            policy = QVActorCriticPolicy
+        else:
+            raise NotImplementedError
+        get_env = get_discrete_env
     else:
-        raise NotImplementedError
+        from con_algo.dae.ppo import CustomPPO
+        from con_algo.dae.policy import CustomActorCriticPolicy
+        if args.algo == "CustomPPO":
+            algo_cls = CustomPPO
+            policy = CustomActorCriticPolicy
+        elif args.algo == "PPO":
+            algo_cls = PPO
+            policy = "MlpPolicy"
+        get_env = get_mujoco_env
 
     hparam, nenvs = load_hparam(args.hparam_file)
 
@@ -162,16 +213,15 @@ if __name__ == "__main__":
         if not callable(v):
             print(k, v)
     
-    if args.threads != hparam['nenvs']:
-        args.threads = min(hparam['nenvs'], args.threads)
-        hparam['nenvs'] = args.threads
-        
     
     print(f"N_ENVS: {nenvs}    SEED: {args.seed}")
     print("List of envs: ", args.envs)
+    
+    
     for _env in args.envs:
         print(f"Learning Env: {_env}")
         logdir = f"./logs/{_env}/{args.run_id}" if args.logging else None
+
 
         env, frameskip = get_env(_env, nenvs, args, logdir)
         env = VecMonitor(env)
@@ -184,8 +234,8 @@ if __name__ == "__main__":
                 use_full_action = False
             else:
                 use_full_action = hparam['full_action']
-            run_name = f"{args.algo}_{_env}_{args.seed}_fullact{use_full_action}_{time_str}_{cur_timestamp}"
-            group_name = f"{args.algo}_{_env}_{args.seed}_fullact{use_full_action}"
+            run_name = f"{args.algo}_{_env}_seed{args.seed}_fullact{use_full_action}_epochs{hparam['n_epochs']}_{time_str}_{cur_timestamp}"
+            group_name = f"{args.algo}_{_env}_fullact{use_full_action}_epochs{hparam['n_epochs']}"
 
             
             wandb.init(
