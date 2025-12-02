@@ -4,7 +4,7 @@ clip_range:
     init: 0.2
     final: 0
     ftype: "linear"
-ent_coef: 0.01
+ent_coef: 0.0
 full_action: false
 kl_coef: 0.0
 vf_coef: 1.5
