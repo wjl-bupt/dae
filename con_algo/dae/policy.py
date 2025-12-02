@@ -97,6 +97,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             self.advantage_net = nn.Linear(self.mlp_extractor.latent_dim_pi, self.action_space.shape[0])
 
 
+
         # Init weights: use orthogonal initialization
         # with small initial weight for the output
         if self.ortho_init:
@@ -106,9 +107,10 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             # originally from openai/baselines (default gains/init_scales).
             module_gains = {
                 self.features_extractor: np.sqrt(2),
+                self.mlp_extractor: np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net: 1,
-                self.advantage_net: 0.1,
+                self.advantage_net: 0.01,
             }
             for module, gain in module_gains.items():
                 module.apply(partial(self.init_weights, gain=gain))
@@ -121,7 +123,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 self.modules_pi.parameters(), lr=lr_schedule(1), **self.optimizer_kwargs
             )
             self.modules_vf = nn.ModuleList(
-                [self.mlp_extractor.value_net, self.value_net, self.advantage_net]
+                [self.mlp_extractor.value_net, self.value_net, self.advantage_net,]
             )
             self.optimizer_vf = self.optimizer_class(
                 self.modules_vf.parameters(), lr=self.lr_vf, **self.optimizer_kwargs
@@ -131,10 +133,18 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 self.parameters(), lr=lr_schedule(1), **self.optimizer_kwargs
             )
 
+    def _get_hermite_univariate_polynomial(self, z: th.Tensor, n: int = 3, ) -> th.Tensor:
+        he1 = z
+        he2 = z*z - 1.0
+        he3 = z*z*z - 3.0*z
+        return th.cat([he1, he2, he3], dim=-1) 
+        
 
     def _extract_latent(self, obs: th.Tensor) -> th.Tensor:
         if self.shared_features_extractor:
-            pass
+            feature = self.features_extractor(obs)
+            latent_pi, latent_vf = self.mlp_extractor(feature)
+            return latent_pi, latent_vf
         else:
             feature = self.features_extractor(obs)
             latent_pi, latent_vf = self.mlp_extractor(feature)
@@ -200,11 +210,13 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         distribution = self.action_dist.proba_distribution(mean_actions, self.log_std)
         # get log probs from distributions
         log_probs = distribution.log_prob(actions)
+ 
+
 
         # advantage net flow, shape is (B, D)
-        adv_latent_feacture = self.advantage_net(latent_vf)
+        adv_latent_feature = self.advantage_net(latent_vf)
         # advantages_raw shape is (B,)
-        advantages = (adv_latent_feacture * (actions - mu)).sum(-1)
+        advantages = (adv_latent_feature * (actions - mu)).sum(-1)
 
         values = self.value_net(latent_vf)
         return values, advantages, log_probs, distribution.entropy()
@@ -234,17 +246,15 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # latent = self.extract_features(obs)
         _, latent_vf = self._extract_latent(obs)
 
-
         # advantage net flow, shape is (B, D)
-        adv_latent_feature = self.advantage_net(latent_vf)
+        adv_latent_feature = self.advantage_net(latent_vf) 
+        
 
         if actions is None:
-            advantages = adv_latent_feature
+            advantages = adv_latent_feature.sum(-1)
         else:
-            zero_mean = (adv_latent_feature * (mu - mu)).sum(-1)
-            advantages = (adv_latent_feature * (actions - mu)).sum(-1) - zero_mean
+            advantages = (adv_latent_feature * (actions - mu)).sum(-1)
         # keep \pi-centered advantage constrant
-        
         values = self.value_net(latent_vf)
-
+        
         return values, advantages

@@ -8,7 +8,7 @@ HPARAM_FILE="/root/dae/params/CustomPPO_mujoco.yml"
 THREADS=32
 LOGGING="--logging"
 USE_WANDB="--use_wandb"
-PROJECT="dae-mujoco"
+PROJECT="CustomPPO-mujoco"
 
 # Mujoco 环境列表
 ENVS=(

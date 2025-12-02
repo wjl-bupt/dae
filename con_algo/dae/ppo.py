@@ -326,7 +326,6 @@ class CustomPPO(OnPolicyAlgorithm):
             logp = log_policy
             old_logp = old_log_policy
             ratio = th.exp(logp - old_logp)
-
             policy_loss_1 = adv * ratio
             policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
             loss = -th.min(policy_loss_1, policy_loss_2).mean()
@@ -392,13 +391,13 @@ class CustomPPO(OnPolicyAlgorithm):
                 # )
 
                 # normalize adv
-                advantages = advantages.detach().clone()
+                advantages_ = advantages.detach().clone()
                 if self.advantage_normalization:
-                    advantages = self._normalize_advantage(advantages, policies = th.exp(old_log_policies))
+                    advantages_ = self._normalize_advantage(advantages_, policies = th.exp(old_log_policies))
 
                 # policy loss
                 policy_loss, ratio = self._policy_loss(
-                    advantages, log_policies, old_log_policies, actions, clip_range
+                    advantages_, log_policies, old_log_policies, actions, clip_range
                 )
 
                 # entropy loss
@@ -411,6 +410,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     + self.ent_coef * entropy_loss
                     + self.kl_coef * kl_loss
                     + self.vf_coef * value_loss
+                    # + self.vf_coef * (advantages.mean())**2
                 )
 
                 losses.append(loss.item())

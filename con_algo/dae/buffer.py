@@ -27,7 +27,6 @@ class CustomSamples(NamedTuple):
     mu: th.Tensor
     rewards: th.Tensor
     # old_policies: th.Tensor
-    
     old_log_policies: th.Tensor
     advantages: th.Tensor
 
@@ -210,7 +209,6 @@ class CustomBuffer(BaseBuffer):
             # NOTE(junweiluo): here we use mu instead of policy
             _act = self.actions[start:end]
             _mu = self.mu[start:end]
-            delta = _act - _mu
             with th.no_grad():
                 _, adv = policy.predict_value(_obs, _act, _mu)
             self.advantages[start:end] = adv

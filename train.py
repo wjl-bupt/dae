@@ -127,7 +127,7 @@ def get_mujoco_env(e, envs, args, logdir):
     #     env = NormalizeReward(env)
     #     env = TransformReward(env, lambda reward: np.clip(reward, -10, 10))
     #     return env
-    
+    # env_fns = [_make_env for _ in range(envs)]
     # register_envs()
     env = make_vec_env(
         env_id=e,
@@ -136,7 +136,8 @@ def get_mujoco_env(e, envs, args, logdir):
         vec_env_cls=CustomVecEnv,
         vec_env_kwargs=dict(threads=args.threads),
     )
-    # env = VecNormalize(env, norm_obs=True, norm_reward=True)  # 可选但强烈推荐
+    from stable_baselines3.common.vec_env import VecNormalize
+    env = VecNormalize(env, norm_obs=True, norm_reward=True)
     env = VecLogger(env, logdir)
     return env, 0
 
