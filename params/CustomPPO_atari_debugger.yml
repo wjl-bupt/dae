@@ -5,7 +5,7 @@ clip_range:
     final: 0
     ftype: "linear"
 ent_coef: 0.01
-full_action: false
+full_action: true
 kl_coef: 0.0
 vf_coef: 1.5
 learning_rate:

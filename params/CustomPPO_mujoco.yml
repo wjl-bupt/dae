@@ -1,11 +1,11 @@
 advantage_normalization: true
-batch_size: 32
+batch_size: 128
 clip_range:
-    init: 0.1
+    init: 0.2
     final: 0
     ftype: "linear"
 ent_coef: 0.01
-full_action: true
+full_action: false
 kl_coef: 0.0
 vf_coef: 1.5
 learning_rate:
@@ -15,9 +15,4 @@ learning_rate:
 n_epochs: 6
 n_steps: 128
 shared: true
-features_extractor: "nature"
 nenvs: 32
-# NOTE(junweiluo): extra param
-# use_wandb: true
-# wandb_project: "dae"
-

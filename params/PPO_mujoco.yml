@@ -1,6 +1,6 @@
-batch_size: 32
+batch_size: 128
 clip_range:
-    init: 0.1
+    init: 0.2
     final: 0
     ftype: "linear"
 vf_coef: 0.5
@@ -11,5 +11,4 @@ learning_rate:
     ftype: "linear"
 n_epochs: 6
 n_steps: 128
-features_extractor: "nature"
 nenvs: 32
