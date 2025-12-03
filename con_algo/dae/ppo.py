@@ -274,7 +274,7 @@ class CustomPPO(OnPolicyAlgorithm):
 
         # std = (policies * advantages.pow(2)).mean().sqrt()
         
-        return (advantages - advantages.mean()) / (advantages.std() + eps)
+        return advantages / (advantages.std() + eps)
 
     def _value_loss(self, deltas, values, lasts):
         loss = th.cat(
@@ -450,6 +450,7 @@ class CustomPPO(OnPolicyAlgorithm):
         # self.logger.record(
         #     "train/policy_min", self.rollout_buffer.policies.min().item()
         # )
+        
         self.logger.record("train/policy_gradient_loss", np.mean(pg_losses))
         self.logger.record("train/value_loss", np.mean(value_losses))
         self.logger.record("train/gnorm", np.mean(gnorms))
@@ -459,7 +460,13 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("train/loss", np.mean(losses))
         self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
         
-        # add some metric to log value network.
+        # add some metric to log.
+        self.logger.record("train/advantage_mean", advantages.detach().cpu().mean().item())
+        self.logger.record("train/advantage_std", advantages.detach().cpu().std().item())
+        self.logger.record("train/values_mean", values[0].detach().cpu().mean().item())
+        self.logger.record("train/values_std", values[0].detach().cpu().std().item())
+        self.logger.record("train/ratio_mean", ratio.detach().cpu().mean().item())
+                           
 
     def _train_separate(self) -> None:
 

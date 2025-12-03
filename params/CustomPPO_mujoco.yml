@@ -4,7 +4,7 @@ clip_range:
     init: 0.2
     final: 0
     ftype: "linear"
-ent_coef: 0.0
+ent_coef: 0.01
 full_action: false
 kl_coef: 0.0
 vf_coef: 1.5
@@ -12,7 +12,7 @@ learning_rate:
     init: 0.00025
     final: 0
     ftype: "linear"
-n_epochs: 6
+n_epochs: 10
 n_steps: 128
 shared: true
 nenvs: 32
