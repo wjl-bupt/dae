@@ -13,11 +13,14 @@ from functools import partial
 from typing import Optional, Tuple, Type, List, Union, Dict
 import numpy as np 
 import gymnasium as gym
+# from functorch import vmap
+# from torch.autograd.functional import hessian, jacobian
+from torch.func import vmap, hessian, functional_call
 from stable_baselines3.common.preprocessing import preprocess_obs
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.type_aliases import Schedule
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor, MlpExtractor, FlattenExtractor, NatureCNN
-
+from copy import deepcopy
 
 class CustomActorCriticPolicy(ActorCriticPolicy):
     def __init__(
@@ -34,6 +37,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         activation_fn : Optional[nn.Module] = nn.Tanh,
     ):
         self.shared_features_extractor = shared_features_extractor
+        # if lr_schedule_vf else None
         self.lr_vf = lr_schedule_vf(1) if lr_schedule_vf else None
 
         super(CustomActorCriticPolicy, self).__init__(
@@ -55,8 +59,10 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             normalize_images=True,
             optimizer_class=th.optim.Adam,
             optimizer_kwargs=None,
-
         )
+        # self.lr_vf = lr_schedule_vf(1) 
+        self.high = th.from_numpy(self.action_space.high).float()
+        self.low = th.from_numpy(self.action_space.low).float()
 
     def _build(self, lr_schedule: Schedule) -> None:
         """
@@ -66,8 +72,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             lr_schedule(1) is the initial learning rate
         """        
         # action log_std
-        self.log_std = nn.Parameter(th.ones(self.action_space.shape[0]) * self.log_std_init)
-
+        self.log_std = nn.Parameter(th.zeros(self.action_space.shape[0]))
+        # self.lt_size = self.action_space.shape[0] * (self.action_space.shape[0] + 1) // 2
         # ------------------------
         # Shared AC
         # ------------------------
@@ -79,23 +85,37 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 activation_fn=self.activation_fn,
                 device=self.device,
             )
+
             # heads
             self.action_net = nn.Linear(self.mlp_extractor.latent_dim_pi, self.action_space.shape[0])
             self.value_net = nn.Linear(self.mlp_extractor.latent_dim_vf, 1)
-            self.advantage_net = nn.Linear(self.mlp_extractor.latent_dim_vf, self.action_space.shape[0])
+            self.advantage_net = nn.Sequential(
+                nn.Linear(self.mlp_extractor.latent_dim_vf + 64, 64),
+                nn.Tanh(),
+                nn.Linear(64, 1),
+            )
         else:
-            # self.features_extractor = self.features_extractor_class(self.observation_space).to(self.device).float()
+            self.features_extractor = self.features_extractor_class(self.observation_space).to(self.device).float()
             self.mlp_extractor = MlpExtractor(
                 self.observation_space.shape[0],
                 net_arch=self.net_arch,
                 activation_fn=self.activation_fn,
                 device=self.device,
             )
-            
+
             self.action_net = nn.Linear(self.mlp_extractor.latent_dim_pi, self.action_space.shape[0])
             self.value_net = nn.Linear(self.mlp_extractor.latent_dim_vf, 1)
-            self.advantage_net = nn.Linear(self.mlp_extractor.latent_dim_pi, self.action_space.shape[0])
-
+            self.advantage_net = nn.Sequential(
+                nn.Linear(self.mlp_extractor.latent_dim_vf + 64, 64),
+                nn.Tanh(),
+                nn.Linear(64, 1),
+            )
+        self.action_embedding = nn.Sequential(
+            nn.Linear(self.action_space.shape[0], 64),
+            nn.Tanh(),
+            nn.Linear(64, 64),
+            nn.Tanh(),
+        )
 
 
         # Init weights: use orthogonal initialization
@@ -110,21 +130,24 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 self.mlp_extractor: np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net: 1,
-                self.advantage_net: 0.01,
+                self.advantage_net: 0.1,
+                self.action_embedding: np.sqrt(2),
             }
             for module, gain in module_gains.items():
                 module.apply(partial(self.init_weights, gain=gain))
 
         # Setup optimizer with initial learning rate
-        # TODO(junweiluo)
-        if (self.lr_vf is not None) and not self.shared_features_extractor:
-            self.modules_pi = nn.ModuleList([self.mlp_extractor.policy_net, self.action_net])
+        # TODO(junweiluo) (self.lr_vf is not None) and 
+        if not self.shared_features_extractor:
+            self.modules_pi = nn.ModuleList([self.mlp_extractor.policy_net, self.action_net, ])
             self.optimizer = self.optimizer_class(
                 self.modules_pi.parameters(), lr=lr_schedule(1), **self.optimizer_kwargs
             )
             self.modules_vf = nn.ModuleList(
                 [self.mlp_extractor.value_net, self.value_net, self.advantage_net,]
             )
+            
+            # self.lr_vf
             self.optimizer_vf = self.optimizer_class(
                 self.modules_vf.parameters(), lr=self.lr_vf, **self.optimizer_kwargs
             )
@@ -132,23 +155,17 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             self.optimizer = self.optimizer_class(
                 self.parameters(), lr=lr_schedule(1), **self.optimizer_kwargs
             )
-
-    def _get_hermite_univariate_polynomial(self, z: th.Tensor, n: int = 3, ) -> th.Tensor:
-        he1 = z
-        he2 = z*z - 1.0
-        he3 = z*z*z - 3.0*z
-        return th.cat([he1, he2, he3], dim=-1) 
         
 
     def _extract_latent(self, obs: th.Tensor) -> th.Tensor:
-        if self.shared_features_extractor:
-            feature = self.features_extractor(obs)
-            latent_pi, latent_vf = self.mlp_extractor(feature)
-            return latent_pi, latent_vf
-        else:
-            feature = self.features_extractor(obs)
-            latent_pi, latent_vf = self.mlp_extractor(feature)
-            return latent_pi, latent_vf
+        # if self.shared_features_extractor:
+        #     feature = self.features_extractor(obs)
+        #     latent_pi, latent_vf = self.mlp_extractor(feature)
+        #     return latent_pi, latent_vf
+        # else:
+        feature = self.features_extractor(obs)
+        latent_pi, latent_vf = self.mlp_extractor(feature)
+        return latent_pi, latent_vf
     
     def _predict(self, obs: th.Tensor, deterministic: bool = False) -> th.Tensor:
 
@@ -199,10 +216,12 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         values = self.value_net(latent_vf)
 
         return actions, mean_actions, log_policies, values
-
+    
     def evaluate_actions(
-        self, obs: th.Tensor, actions: th.Tensor, mu: th.Tensor,
+        self, obs: th.Tensor, actions: th.Tensor, mu: th.Tensor, log_std: th.Tensor = None,
     ) -> Tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
+        
+        
         obs = obs.float()
         latent_pi, latent_vf = self._extract_latent(obs)
         # distribution = self._get_action_dist_from_latent(latent)
@@ -210,22 +229,50 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         distribution = self.action_dist.proba_distribution(mean_actions, self.log_std)
         # get log probs from distributions
         log_probs = distribution.log_prob(actions)
- 
 
+        # def f_single(latent_b, action_b):
+        #     return self.advantage_net(th.cat([latent_b, self.action_embedding(action_b)], dim=-1)).squeeze(-1)
 
-        # advantage net flow, shape is (B, D)
-        adv_latent_feature = self.advantage_net(latent_vf)
-        # advantages_raw shape is (B,)
-        advantages = (adv_latent_feature * (actions - mu)).sum(-1)
+        # def hess_single(latent_b, action_b):
+        #     # 只对 action_b 求 Hessian
+        #     return hessian(lambda x: f_single(latent_b, x))(action_b)
 
+        actions_embedded = self.action_embedding(actions - mu)
+        # mu_embedded = self.action_embedding(mu)
+        
+        f_a = self.advantage_net(th.cat([latent_vf, actions_embedded], dim=-1))
+        # f_mu = self.advantage_net(th.cat([latent_vf, mu_embedded], dim=-1))
+        
+
+        # hessian_matrix = vmap(hess_single)(latent_vf, mu)
+        # sigma = th.diag_embed(th.exp(log_std)**2).unsqueeze(0).repeat(mu.size(0), 1, 1)
+        # trace = 0.5 * sigma**2 * hessian_matrix.sum(dim=(-1, -2)).unsqueeze(-1)
+        # trace = (hessian_matrix * sigma)
+        # trace = 0.5 * trace.diagonal(dim1=-2, dim2=-1).sum(-1).unsqueeze(-1)
+        # trace = 0.5 * (hessian_matrix @ sigma).sum(dim=(-1, -2)).unsqueeze(-1)
+
+        # 计算高斯分布的协方差矩阵（这里 sigma^2 = exp(log_std) ^ 2）
+        # sigma = th.exp(log_std) ** 2  # 方差，shape: [d]
+        # 扩展 sigma 使其与 trace_hessian 对齐（重复 sigma 到 [b, d]）
+        # sigma_expanded = sigma.unsqueeze(0).repeat(latent_vf.size(0), 1)  # shape: [b, d]
+        # 计算 Hessian 矩阵的迹：对每个样本的 d x d Hessian 矩阵计算对角线的和
+        # trace_hessian = th.sum(th.diagonal(hessian_matrix, dim1=-2, dim2=-1), dim=-1)  # shape: [b]
+        # 计算期望的二阶贡献项
+        # trace = 0.5 * th.sum(sigma * hessian_matrix, dim=(-1, -2)).unsqueeze(-1)
+        trace = th.Tensor([0.0])
+        approx_adv_expectation = th.Tensor([[0.0]])
+        # approx_adv_expectation = f_mu + trace
+        advantages = f_a
+        advantages = advantages.squeeze(-1)
         values = self.value_net(latent_vf)
-        return values, advantages, log_probs, distribution.entropy()
+        
+        return values, advantages, log_probs, distribution.entropy(), trace.mean(), approx_adv_expectation.squeeze(-1)
 
     def evaluate_state(
-        self, obs: th.Tensor, actions: th.Tensor, mu: th.Tensor
+        self, obs: th.Tensor, actions: th.Tensor, mu: th.Tensor, log_std: th.Tensor = None,
     ) -> Tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
 
-        return self.evaluate_actions(obs = obs, actions = actions, mu = mu)
+        return self.evaluate_actions(obs = obs, actions = actions, mu = mu, log_std = log_std)
 
     def predict_policy(
         self, obs: th.Tensor, actions: Optional[th.Tensor] = None,
@@ -240,20 +287,18 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         return log_policies, distribution.entropy()
 
     def predict_value(
-        self, obs: th.Tensor, actions: Optional[th.Tensor] = None, mu: Optional[th.Tensor] = None,
+        self, obs: th.Tensor, actions: Optional[th.Tensor] = None, mu: Optional[th.Tensor] = None, log_std : Optional[th.Tensor] = None,
     ) -> Tuple[th.Tensor, th.Tensor]:
         obs = obs.float()
         # latent = self.extract_features(obs)
         _, latent_vf = self._extract_latent(obs)
 
-        # advantage net flow, shape is (B, D)
-        adv_latent_feature = self.advantage_net(latent_vf) 
-        
-
         if actions is None:
-            advantages = adv_latent_feature.sum(-1)
+            advantages = None
         else:
-            advantages = (adv_latent_feature * (actions - mu)).sum(-1)
+            values, advantages, log_probs, entropy, _, approx_adv_expectation = self.evaluate_actions(obs, actions, mu, log_std)
+            # build \pi-centered advantage constrant
+            # advantages = advantages - advantages_mu
         # keep \pi-centered advantage constrant
         values = self.value_net(latent_vf)
         

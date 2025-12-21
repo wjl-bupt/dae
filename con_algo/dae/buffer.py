@@ -40,6 +40,7 @@ class CustomTrajSamples(NamedTuple):
     values: th.Tensor
     last_values: List
     lengths: List
+    advantages: th.Tensor
 
 
 class CustomBuffer(BaseBuffer):
@@ -200,7 +201,7 @@ class CustomBuffer(BaseBuffer):
             start = end
         self.values = self.values.cpu()
 
-    def update_advantage(self, policy, batch_size=1024):
+    def update_advantage(self, policy, batch_size=1024, log_std = None):
         start = 0
         size = len(self.observations)
         while start < size:
@@ -210,7 +211,7 @@ class CustomBuffer(BaseBuffer):
             _act = self.actions[start:end]
             _mu = self.mu[start:end]
             with th.no_grad():
-                _, adv = policy.predict_value(_obs, _act, _mu)
+                _, adv = policy.predict_value(_obs, _act, _mu, log_std)
             self.advantages[start:end] = adv
             start = end
 
@@ -268,7 +269,8 @@ class CustomBuffer(BaseBuffer):
 
     def _get_traj_samples(self, indices) -> CustomTrajSamples:
 
-        _obs, _act, _mu, _rew, _lpol, _val, _last, splits = (
+        _obs, _act, _mu, _rew, _lpol, _val, _last, splits, _adv = (
+            [],
             [],
             [],
             [],
@@ -288,6 +290,7 @@ class CustomBuffer(BaseBuffer):
             _val.append(self.values[start:end])
             _last.append(self.last_values[idx])
             splits.append(end - start)
+            _adv.append(self.advantages[start:end])
 
         return CustomTrajSamples(
             th.cat(_obs),
@@ -298,6 +301,7 @@ class CustomBuffer(BaseBuffer):
             th.cat(_val),
             _last,
             splits,
+            th.cat(_adv),
         )
 
 

@@ -13,17 +13,18 @@ PROJECT="CustomPPO-mujoco"
 # Mujoco 环境列表
 ENVS=(
     "Ant-v5"
-    "Hopper-v5"
-    "Walker2d-v5"
-    "HalfCheetah-v5"
+    # "Hopper-v5"
+    # "Walker2d-v5"
+    # "HalfCheetah-v5"
+    # "HumanoidStandup-v5"
 )
 
 # 运行的最大 seed 数量
 MAX_SEED=5
 
 # activate proxy if we use wandb
-source /etc/profile.d/clash.sh
-proxy_on
+# source /etc/profile.d/clash.sh
+# proxy_on
 
 # ----------------------------
 # 双循环：每个环境 × 多个种子
