@@ -19,7 +19,7 @@ import wandb
 
 
 from gymnasium import spaces
-from con_algo.dae.policy import CustomActorCriticPolicy
+from con_algo.qvppo.policy import CustomActorCriticPolicy
 from con_algo.dae.buffer import CustomBuffer
 
 from stable_baselines3.common.callbacks import BaseCallback
