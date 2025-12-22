@@ -21,6 +21,7 @@ from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.type_aliases import Schedule
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor, MlpExtractor, FlattenExtractor, NatureCNN
 from copy import deepcopy
+from torch.distributions import Normal
 
 class CustomActorCriticPolicy(ActorCriticPolicy):
     def __init__(
@@ -72,12 +73,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         :param lr_schedule: Learning rate schedule
             lr_schedule(1) is the initial learning rate
         """        
-        # action log_std
-        self.log_std = nn.Parameter(th.zeros(self.action_space.shape[0]))
-        # self.lt_size = self.action_space.shape[0] * (self.action_space.shape[0] + 1) // 2
-        # ------------------------
-        # Shared AC
-        # ------------------------
+
         if self.shared_features_extractor:
             # MlpExtractor 分 actor/critic latent
             self.mlp_extractor = MlpExtractor(
@@ -96,20 +92,29 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             )
 
         self.action_net = nn.Linear(self.mlp_extractor.latent_dim_pi, self.action_space.shape[0])
+        # self.log_std = nn.Parameter(th.zeros(self.action_space.shape[0]))
+        self.log_std = nn.Linear(self.mlp_extractor.latent_dim_pi, self.action_space.shape[0])
         self.value_net = nn.Linear(self.mlp_extractor.latent_dim_vf, 1)
-        self.action_embedding = nn.Sequential(
-            nn.Linear(self.action_space.shape[0], 64),
+        self.advantage_net = nn.Sequential(
+            nn.Linear(self.mlp_extractor.latent_dim_vf + self.action_space.shape[0], 64),
             nn.Tanh(),
+            nn.Linear(64, 1),
         )
-        self.adv_feature_extractor = nn.Sequential(
-            nn.Linear(self.mlp_extractor.latent_dim_vf + 64, 128),
-            nn.Tanh(),
-            nn.Linear(128, 64),
-            nn.Tanh(),
-        )
-        # self.advantage_log_std = nn.Linear(64, self.action_space.shape[0])
-        self.advantage_mu = nn.Linear(64, 1)
 
+        self.register_buffer(
+            "action_scale",
+            th.tensor(
+                (self.action_space.high - self.action_space.low) / 2.0,
+                dtype=th.float32,
+            ),
+        )
+        self.register_buffer(
+            "action_bias",
+            th.tensor(
+                (self.action_space.high + self.action_space.low) / 2.0,
+                dtype=th.float32,
+            ),
+        )
 
         # Init weights: use orthogonal initialization
         # with small initial weight for the output
@@ -123,8 +128,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 self.mlp_extractor: np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net: 1,
-                # self.advantage_net: 0.1,
-                self.action_embedding: np.sqrt(2),
+                self.advantage_net: 0.1,
+                # 
             }
             for module, gain in module_gains.items():
                 module.apply(partial(self.init_weights, gain=gain))
@@ -165,13 +170,30 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         latent_pi, _ = self._extract_latent(obs)
         # output action mean
         mean_actions = self.action_net(latent_pi)
+        log_std = self.log_std(latent_pi)
         # build Normal action distributin
-        distribution = self.action_dist.proba_distribution(
-                            mean_actions,
-                            self.log_std,
-                        )
+        normal = th.distributions.Normal(mean_actions, log_std.exp())
+        x_t = normal.rsample()  # for reparameterization trick (mean + std * N(0,1))
+        y_t = th.tanh(x_t)
+        actions = y_t * self.action_scale + self.action_bias
+        log_prob = normal.log_prob(x_t)
+        # Enforcing Action Bound
+        log_prob -= th.log(self.action_scale * (1 - y_t.pow(2)) + 1e-6)
+        log_prob = log_prob.sum(1, keepdim=True)
+        mean = th.tanh(mean) * self.action_scale + self.action_bias
+        
+        return actions
 
-        return distribution.get_actions(deterministic=deterministic)
+    def calc_meam_std(self, latent_pi):
+        mu = self.action_net(latent_pi)
+        log_std = self.log_std(latent_pi)
+        log_std = th.tanh(log_std)
+        # LOG_STD_MAX = 2
+        # LOG_STD_MIN = -5
+        # log_std = LOG_STD_MIN + 0.5 * (LOG_STD_MAX - LOG_STD_MIN) * (log_std + 1) 
+        
+        return mu, log_std
+
 
     def extract_features_vf(self, obs: th.Tensor) -> th.Tensor:
         # pobs = preprocess_obs(
@@ -185,7 +207,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         )
 
     def forward(
-        self, obs: th.Tensor, deterministic: bool = False
+        self, obs: th.Tensor, deterministic: bool = False,
+        epsilon : float = 1e-8,
     ) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
         """
         Forward pass in all the networks (actor and critic)
@@ -196,54 +219,86 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         """
         obs = obs.float()
         latent_pi, latent_vf = self._extract_latent(obs)
-        mean_actions = self.action_net(latent_pi)
+        mean_actions, log_std = self.calc_meam_std(latent_pi)
         # NOTE(junweiluo) 25/11/29: use Gassuain
-        distribution = self.action_dist.proba_distribution(mean_actions, self.log_std)
-        actions = distribution.get_actions(deterministic=deterministic)
-        # policies = distribution.distribution.probs
-        # log_policies shape is [n_envs]
-        # if use distribution.distribution.log_prob(actions), shape will be [n_envs, action_dim]
+        # distribution = self.action_dist.proba_distribution(mean_actions, self.log_std)
+        # actions = distribution.get_actions(deterministic=deterministic)
 
-        log_policies = distribution.log_prob(actions)
-
+        # log_policies = distribution.log_prob(actions)
+        
+        # NOTE(junweiluo): reparameter action
+        # noise = th.randn_like(mean_actions)
+        # std = self.log_std.exp()
+        # # log_prob = -0.5 * (((action - mu) / std) ** 2 + 2*torch.log(std) + torch.log(torch.tensor(2*3.1415926)))
+        # actions = mean_actions + noise * self.log_std.exp()
+        # log_policies = -0.5 * (((actions - mean_actions) / (std + 1e-10)) ** 2 + 2*th.log(std) + th.log(th.tensor(2*th.pi)))
+        
+        # NOTE(junweiluo):使用tanh的版本
+        # build Normal action distributin
+        normal = th.distributions.Normal(mean_actions, log_std.exp())
+        x_t = normal.rsample()  # for reparameterization trick (mean + std * N(0,1))
+        y_t = th.tanh(x_t)
+        actions = y_t * self.action_scale + self.action_bias
+        log_policies = normal.log_prob(x_t)
+        # Enforcing Action Bound
+        log_policies -= th.log(self.action_scale * (1 - y_t.pow(2)) + 1e-6)
+        log_policies = log_policies.sum(-1)
+        # mean_actions = th.tanh(mean_actions) * self.action_scale + self.action_bias
         values = self.value_net(latent_vf)
 
-        return actions, mean_actions, log_policies, values
+        return actions, mean_actions, log_policies, values, x_t
     
     def evaluate_actions(
-        self, obs: th.Tensor, actions: th.Tensor, mu: th.Tensor, log_std: th.Tensor = None,
+        self, obs: th.Tensor, actions: th.Tensor, 
+        mu: th.Tensor, log_std: th.Tensor,
+        noise: th.Tensor, epsilon:float = 1e-8,
     ) -> Tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
         
         
         obs = obs.float()
         latent_pi, latent_vf = self._extract_latent(obs)
-        # distribution = self._get_action_dist_from_latent(latent)
-        mean_actions = self.action_net(latent_pi)
-        distribution = self.action_dist.proba_distribution(mean_actions, self.log_std)
-        # get log probs from distributions
-        log_probs = distribution.log_prob(actions)
+        mean_actions, log_std = self.calc_meam_std(latent_pi)
+        normal = th.distributions.Normal(mean_actions, log_std.exp())
+        # x_t = normal.rsample()  # for reparameterization trick (mean + std * N(0,1))
+        y_t = th.tanh(noise)
+        # actions = y_t * self.action_scale + self.action_bias
+        log_policies = normal.log_prob(noise)
+        # Enforcing Action Bound
+        log_policies -= th.log(self.action_scale * (1 - y_t.pow(2)) + 1e-6)
+        log_policies = log_policies.sum(-1)
+        mean_actions = th.tanh(mean_actions) * self.action_scale + self.action_bias
+        
+        # NOTE(junweiluo): 
 
+        zero_point = th.zeros_like(actions)
+        f_a = self.advantage_net(th.concat([latent_vf, actions], dim = -1))
+        f_zero = self.advantage_net(th.concat([latent_vf, zero_point], dim = -1))
+        
+        # calc hessian matrix
+        def f_single(latent_b, action_b):
+            return self.advantage_net(th.cat([latent_b, action_b], dim=-1)).squeeze(-1)
 
-        actions_embedding = self.action_embedding(actions)
-        adv_latent = self.adv_feature_extractor(th.concat([latent_vf, actions_embedding], dim = -1))
-        Q_mu = self.advantage_mu(adv_latent)
-        # adv_log_std = self.advantage_log_std(adv_latent)
+        def hess_single(latent_b, action_b):
+            # 只对 action_b 求 Hessian
+            return hessian(lambda x: f_single(latent_b, x))(action_b)
 
-        # adv_dist = self.action_dist.proba_distribution(adv_mu, adv_log_std)
-        # advantages = adv_dist.get_actions(deterministic=False)
-        # advantages = advantages.sum(dim = -1)
+        hessian_matrix = vmap(hess_single)(latent_vf, zero_point)
+        traces = th.einsum("bii->b", hessian_matrix).unsqueeze(-1)
+        
+        advantages = f_a - f_zero - 0.5 * traces
+        advantages = advantages.squeeze(-1)
         
 
         values = self.value_net(latent_vf)
-        advantages = (Q_mu - values).squeeze(-1)
         
-        return values, advantages, log_probs, distribution.entropy()
+        return values, advantages, log_policies, normal.entropy()
+        # return values, advantages, log_probs, distribution.entropy()
     
     def evaluate_state(
-        self, obs: th.Tensor, actions: th.Tensor, mu: th.Tensor, log_std: th.Tensor = None,
+        self, obs: th.Tensor, actions: th.Tensor, mu: th.Tensor, log_std: th.Tensor = None, noise: th.Tensor = None,
     ) -> Tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
 
-        return self.evaluate_actions(obs = obs, actions = actions, mu = mu, log_std = log_std)
+        return self.evaluate_actions(obs = obs, actions = actions, mu = mu, log_std = log_std, noise = noise)
 
     def predict_policy(
         self, obs: th.Tensor, actions: Optional[th.Tensor] = None,
@@ -258,7 +313,9 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         return log_policies, distribution.entropy()
 
     def predict_value(
-        self, obs: th.Tensor, actions: Optional[th.Tensor] = None, mu: Optional[th.Tensor] = None, log_std : Optional[th.Tensor] = None,
+        self, obs: th.Tensor, actions: Optional[th.Tensor] = None, 
+        mu: Optional[th.Tensor] = None, log_std : Optional[th.Tensor] = None,
+        noise: Optional[th.Tensor] = None,
     ) -> Tuple[th.Tensor, th.Tensor]:
         obs = obs.float()
         # latent = self.extract_features(obs)
@@ -267,7 +324,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         if actions is None:
             advantages = None
         else:
-            values, advantages, log_probs, entropy = self.evaluate_actions(obs, actions, mu, log_std)
+            values, advantages, log_probs, entropy = self.evaluate_actions(obs, actions, mu, log_std, noise)
             # build \pi-centered advantage constrant
             # advantages = advantages - advantages_mu
         # keep \pi-centered advantage constrant

@@ -202,7 +202,7 @@ class CustomPPO(OnPolicyAlgorithm):
             with th.no_grad():
                 # Convert to pytorch tensor
                 obs_tensor = th.as_tensor(self._last_obs, device=self.device)
-                actions, mu, log_policies, values = self.policy.forward(
+                actions, mu, log_policies, values, noise = self.policy.forward(
                     obs_tensor
                 )
             actions = actions.cpu().numpy()
@@ -220,7 +220,7 @@ class CustomPPO(OnPolicyAlgorithm):
             # NOTE(junweiluo) reshape actions for discrete action space. But here action space is continuous.
             # actions = actions.reshape(-1, 1)
             rollout_buffer.add(
-                self._last_obs, actions, mu, rewards, dones, log_policies, values
+                self._last_obs, actions, mu, rewards, dones, log_policies, values, noise,
             )
 
             self._last_obs = new_obs
@@ -344,7 +344,7 @@ class CustomPPO(OnPolicyAlgorithm):
         losses, value_losses, pg_losses, kl_divs = [], [], [], []
         gnorm_max, gnorm_min = 0, float("inf")
         
-        log_std = self.policy.log_std.detach()
+        log_std = th.tensor([0.0])
         
         with th.no_grad():
             self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size)
@@ -359,13 +359,14 @@ class CustomPPO(OnPolicyAlgorithm):
                 last_values = data.last_values
                 lengths = data.lengths
                 # advantages_ = data.advantages
+                noises = data.noises
 
                 (
                     values,
                     advantages,
                     log_policies,
                     entropy,
-                ) = self.policy.evaluate_state(data.observations, actions, mu, log_std)
+                ) = self.policy.evaluate_state(data.observations, actions, mu, log_std, noises)
 
                 # value loss
                 values = values.flatten().split(lengths)
