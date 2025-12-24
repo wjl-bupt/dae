@@ -344,7 +344,7 @@ class CustomPPO(OnPolicyAlgorithm):
         losses, value_losses, pg_losses, kl_divs = [], [], [], []
         gnorm_max, gnorm_min = 0, float("inf")
         
-        log_std = th.tensor([0.0])
+        log_std = self.policy.log_std
         
         with th.no_grad():
             self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size)
@@ -366,6 +366,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     advantages,
                     log_policies,
                     entropy,
+                    # entropy_loss,
                 ) = self.policy.evaluate_state(data.observations, actions, mu, log_std, noises)
 
                 # value loss
@@ -407,13 +408,15 @@ class CustomPPO(OnPolicyAlgorithm):
                 )
 
                 # entropy loss
-                entropy_loss = -th.mean(entropy)
+                # entropy_loss = -th.mean(entropy)
+                entropy_loss = - th.mean(entropy)
 
                 # full loss
                 kl_loss = ((ratio - 1) - ratio.log()).mean()
+                # log_alpha
                 loss = (
                     policy_loss
-                    + self.ent_coef * entropy_loss
+                    - self.policy.log_alpha.exp() * entropy_loss
                     + self.kl_coef * kl_loss
                     + self.vf_coef * value_loss
                     # + 0.5 * th.mean(approx_expectation**2)
@@ -444,7 +447,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 )
                 pg_losses.append(policy_loss.item())
                 value_losses.append(value_loss.item())
-                entropy_losses.append(entropy_loss.item())
+                entropy_losses.append(-entropy.mean().item())
                 kl_divs.append(kl_loss.item())
                 gnorms.append(gnorm)
 
@@ -453,7 +456,8 @@ class CustomPPO(OnPolicyAlgorithm):
         # Logs
         self.logger.record("train/clip_range", clip_range)
         self.logger.record("train/clip_fraction", np.mean(clip_fractions))
-        self.logger.record("train/entropy_loss", np.mean(entropy_losses))
+        self.logger.record("train/entropy_losses", np.mean(entropy_losses))
+        # self.logger.record("train/entropy_losses", np.mean(entropy_losses))
         # self.logger.record(
         #     "train/policy_min", self.rollout_buffer.policies.min().item()
         # )
@@ -476,8 +480,8 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("train/values_std", values[0].detach().cpu().std().item())
         self.logger.record("train/ratio_mean", ratio.detach().cpu().mean().item())
         # self.logger.record("train/trace", trace.cpu().mean().item())
-        self.logger.record("train/log_std", log_std.cpu().mean().item())
-                           
+        self.logger.record("train/log_std", log_std.cpu().mean().item())  
+        self.logger.record("train/alpha", self.policy.log_alpha.exp().item())                         
 
     def _train_separate(self) -> None:
 
