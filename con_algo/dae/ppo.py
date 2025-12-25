@@ -343,7 +343,7 @@ class CustomPPO(OnPolicyAlgorithm):
         entropy_losses, clip_fractions, gnorms = [], [], []
         losses, value_losses, pg_losses, kl_divs = [], [], [], []
         gnorm_max, gnorm_min = 0, float("inf")
-        
+        q_values = []
         log_std = self.policy.log_std
         
         with th.no_grad():
@@ -410,13 +410,14 @@ class CustomPPO(OnPolicyAlgorithm):
                 # entropy loss
                 # entropy_loss = -th.mean(entropy)
                 entropy_loss = - th.mean(entropy)
-
+                # entropy_loss = th.mean(self.policy.log_alpha.exp() * (entropy - self.policy.target_entropy)**2)
+                # entropy_loss = th.mean((- log_policies.detach() + self.policy.target_entropy) * self.policy.log_alpha.exp())
                 # full loss
                 kl_loss = ((ratio - 1) - ratio.log()).mean()
                 # log_alpha
                 loss = (
                     policy_loss
-                    - self.policy.log_alpha.exp() * entropy_loss
+                    + entropy_loss
                     + self.kl_coef * kl_loss
                     + self.vf_coef * value_loss
                     # + 0.5 * th.mean(approx_expectation**2)
@@ -456,11 +457,11 @@ class CustomPPO(OnPolicyAlgorithm):
         # Logs
         self.logger.record("train/clip_range", clip_range)
         self.logger.record("train/clip_fraction", np.mean(clip_fractions))
-        self.logger.record("train/entropy_losses", np.mean(entropy_losses))
+        self.logger.record("train/entropy_loss", np.mean(entropy_losses))
         # self.logger.record("train/entropy_losses", np.mean(entropy_losses))
-        # self.logger.record(
-        #     "train/policy_min", self.rollout_buffer.policies.min().item()
-        # )
+        self.logger.record("log_policies/policy_min", log_policies.detach().cpu().min().item())
+        self.logger.record("log_policies/policy_max", log_policies.detach().cpu().max().item())
+        self.logger.record("log_policies/policy_mean", log_policies.detach().cpu().mean().item())
         
         self.logger.record("train/policy_gradient_loss", np.mean(pg_losses))
         self.logger.record("train/value_loss", np.mean(value_losses))
@@ -470,18 +471,30 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("train/approx_kl", np.mean(kl_divs))
         self.logger.record("train/loss", np.mean(losses))
         self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
-        
-        # add some metric to log.
-        self.logger.record("train/advantage_mean", advantages.detach().cpu().mean().item())
-        self.logger.record("train/advantage_std", advantages.detach().cpu().std().item())
-        self.logger.record("train/advantage_max", advantages.detach().cpu().max().item())
-        self.logger.record("train/advantage_min", advantages.detach().cpu().min().item())
-        self.logger.record("train/values_mean", values[0].detach().cpu().mean().item())
-        self.logger.record("train/values_std", values[0].detach().cpu().std().item())
         self.logger.record("train/ratio_mean", ratio.detach().cpu().mean().item())
         # self.logger.record("train/trace", trace.cpu().mean().item())
         self.logger.record("train/log_std", log_std.cpu().mean().item())  
-        self.logger.record("train/alpha", self.policy.log_alpha.exp().item())                         
+        self.logger.record("train/alpha", self.policy.log_alpha.exp().item()) 
+
+        # add some metric to log.
+        concat_values = th.concat(values, dim = -1)
+        q_values = (concat_values + advantages).detach()
+        self.logger.record("advantage/advantage_mean", advantages.detach().cpu().mean().item())
+        self.logger.record("advantage/advantage_std", advantages.detach().cpu().std().item())
+        self.logger.record("advantage/advantage_max", advantages.detach().cpu().max().item())
+        self.logger.record("advantage/advantage_min", advantages.detach().cpu().min().item())
+
+        self.logger.record("values/V_mean", concat_values.detach().cpu().mean().item())
+        self.logger.record("values/V_std", concat_values.detach().cpu().std().item())
+        self.logger.record("values/V_max", concat_values.detach().cpu().max().item())
+        self.logger.record("values/V_min", concat_values.detach().cpu().min().item())
+
+        self.logger.record("Q_values/Q_values_mean", q_values.detach().cpu().mean().item())
+        self.logger.record("Q_values/Q_values_std", q_values.detach().cpu().std().item())
+        self.logger.record("Q_values/Q_values_max", q_values.detach().cpu().max().item())
+        self.logger.record("Q_values/Q_values_min", q_values.detach().cpu().min().item())
+
+                        
 
     def _train_separate(self) -> None:
 

@@ -103,7 +103,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             nn.Linear(64, 1),
         )
         self.log_alpha = nn.Parameter(th.tensor(math.log(0.01)))
-        self.taregt_entropy = self.action_space.shape[0]
+        self.target_entropy = self.action_space.shape[0]
         self.register_buffer(
             "action_scale",
             th.tensor(
@@ -147,7 +147,6 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             self.modules_vf = nn.ModuleList(
                 [self.mlp_extractor.value_net, self.value_net, self.advantage_net,]
             )
-            
             # self.lr_vf
             self.optimizer_vf = self.optimizer_class(
                 self.modules_vf.parameters(), lr=self.lr_vf, **self.optimizer_kwargs
@@ -190,6 +189,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
     def calc_meam_std(self, latent_pi):
         mu = self.action_net(latent_pi)
         log_std = self.log_std
+        # mu = th.zeros_like(log_std)
         # log_std = self.log_std(latent_pi)
         # log_std = th.tanh(log_std)
         # LOG_STD_MAX = 2
@@ -243,7 +243,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         
         # log_policies = -0.5 * (((actions - mean_actions)/ log_std.exp())**2 + 2*th.log(log_std.exp()) + th.log(th.tensor(2* th.pi)))
         # log_policies = log_policies.sum(-1)
-        # # mean_actions = th.tanh(mean_actions) * self.action_scale + self.action_bias
+        # mean_actions = th.tanh(mean_actions) * self.action_scale + self.action_bias
         values = self.value_net(latent_vf)
 
         return actions, mean_actions, log_policies, values, z
@@ -272,6 +272,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         #         0.5 * (1.0 + th.log(th.tensor(2.0 * th.pi))) * self.action_space.shape[0]
         #         + th.sum(new_log_std, dim=-1)
         #     ).detach()
+        
         # entropy = 0.5 * self.action_space.shape[0] * (1 + th.log(th.tensor(2*th.pi)))
         # entropy += torch.sum(log_std, dim=-1)
         # entropy_loss = (entropy - self.taregt_entropy).pow(2) * self.log_alpha.exp()
@@ -283,34 +284,34 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
 
         # grad_zero_f = th.autograd.grad(f_zero.sum(), zero_points, create_graph=True)[0]
         
-        # # calc hessian matrix
-        # def f_single(latent_b, action_b):
-        #     return self.advantage_net(th.cat([latent_b, action_b], dim=-1)).squeeze(-1)
+        # calc hessian matrix
+        def f_single(latent_b, action_b):
+            return self.advantage_net(th.cat([latent_b, action_b], dim=-1)).squeeze(-1)
 
-        # def hess_single(latent_b, action_b):
-        #     # 只对 action_b 求 Hessian
-        #     return hessian(lambda x: f_single(latent_b, x))(action_b)
+        def hess_single(latent_b, action_b):
+            # 只对 action_b 求 Hessian
+            return hessian(lambda x: f_single(latent_b, x))(action_b)
 
-        # def adv_single(latent_b, action_b):
-        #     x = th.cat([latent_b, action_b], dim=-1)
-        #     return self.advantage_net(x).squeeze(-1)
+        def adv_single(latent_b, action_b):
+            x = th.cat([latent_b, action_b], dim=-1)
+            return self.advantage_net(x).squeeze(-1)
 
-        # grad_adv_single = jacrev(adv_single, argnums=1)
-        # jacobian = vmap(grad_adv_single)(
-        #     latent_vf,
-        #     zero_points
-        # ) 
-
-        # hessian_matrix = vmap(hess_single)(latent_vf, zero_points)
-        # hessian_diag = th.diagonal(hessian_matrix, dim1=-2, dim2=-1)
-        # sigma = th.exp(log_std).pow(2)  
-        # taylor_terms = th.sum(jacobian * mu, dim = -1) + 0.5 * th.sum(hessian_diag * sigma, dim=-1)
+        grad_adv_single = jacrev(adv_single, argnums=1)
+        jacobian = vmap(grad_adv_single)(
+            latent_vf,
+            zero_points
+        ) 
+        
+        hessian_matrix = vmap(hess_single)(latent_vf, zero_points)
+        hessian_diag = th.diagonal(hessian_matrix, dim1=-2, dim2=-1)
+        sigma = th.exp(log_std).pow(2)  
+        # traces = 0.5 * th.sum(hessian_diag * sigma, dim=-1).unsqueeze(-1)
+        taylor_terms = th.sum(jacobian * mu, dim = -1) + 0.5 * th.sum(hessian_diag * sigma, dim=-1)
         # traces = th.einsum("bii->b", hessian_matrix).unsqueeze(-1)
 
         # - 0.5 * traces
-        advantages = f_a - f_zero
+        advantages = f_a - f_zero - taylor_terms.unsqueeze(-1)
         advantages = advantages.squeeze(-1)
-        
 
         values = self.value_net(latent_vf)
         
