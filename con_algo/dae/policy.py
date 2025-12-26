@@ -102,8 +102,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             nn.Tanh(),
             nn.Linear(64, 1),
         )
-        self.log_alpha = nn.Parameter(th.tensor(math.log(0.01)))
-        self.target_entropy = self.action_space.shape[0]
+        # self.log_alpha = nn.Parameter(th.tensor(math.log(0.01)))
+        # self.target_entropy = self.action_space.shape[0]
         self.register_buffer(
             "action_scale",
             th.tensor(
@@ -225,10 +225,10 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         latent_pi, latent_vf = self._extract_latent(obs)
         mean_actions, log_std = self.calc_meam_std(latent_pi)
         # NOTE(junweiluo) 25/11/29: use Gassuain
-        distribution = self.action_dist.proba_distribution(mean_actions, log_std)
-        actions = distribution.get_actions(deterministic=deterministic)
+        # distribution = self.action_dist.proba_distribution(mean_actions, log_std)
+        # actions = distribution.get_actions(deterministic=deterministic)
 
-        log_policies = distribution.log_prob(actions)
+        # log_policies = distribution.log_prob(actions)
         
         # NOTE(junweiluo): reparameter action
         # noise = th.randn_like(mean_actions)
@@ -239,11 +239,11 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         
         # NOTE(junweiluo):使用tanh的版本
         z = th.randn_like(mean_actions)
-        # actions = mean_actions + z * log_std.exp()
+        actions = mean_actions + z * log_std.exp()
         
-        # log_policies = -0.5 * (((actions - mean_actions)/ log_std.exp())**2 + 2*th.log(log_std.exp()) + th.log(th.tensor(2* th.pi)))
-        # log_policies = log_policies.sum(-1)
-        # mean_actions = th.tanh(mean_actions) * self.action_scale + self.action_bias
+        log_policies = -0.5 * (((actions - mean_actions)/ log_std.exp())**2 + 2*th.log(log_std.exp()) + th.log(th.tensor(2* th.pi)))
+        log_policies = log_policies.sum(-1)
+        mean_actions = th.tanh(mean_actions) * self.action_scale + self.action_bias
         values = self.value_net(latent_vf)
 
         return actions, mean_actions, log_policies, values, z
@@ -259,19 +259,19 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         latent_pi, latent_vf = self._extract_latent(obs)
         mean_actions, new_log_std = self.calc_meam_std(latent_pi)
 
-        distribution = self.action_dist.proba_distribution(mean_actions, new_log_std)
-        log_policies = distribution.log_prob(actions)
-        entropy = distribution.entropy()
+        # distribution = self.action_dist.proba_distribution(mean_actions, new_log_std)
+        # log_policies = distribution.log_prob(actions)
+        # entropy = distribution.entropy()
 
-        # log_policies = -0.5 * (
-        #     ((actions - mean_actions) / new_log_std.exp())**2 + \
-        #     2*th.log(new_log_std.exp()) + th.log(th.tensor(2* th.pi))
-        # )
-        # log_policies = log_policies.sum(-1)
-        # entropy = (
-        #         0.5 * (1.0 + th.log(th.tensor(2.0 * th.pi))) * self.action_space.shape[0]
-        #         + th.sum(new_log_std, dim=-1)
-        #     ).detach()
+        log_policies = -0.5 * (
+            ((actions - mean_actions) / new_log_std.exp())**2 + \
+            2*th.log(new_log_std.exp()) + th.log(th.tensor(2* th.pi))
+        )
+        log_policies = log_policies.sum(-1)
+        entropy = (
+                0.5 * (1.0 + th.log(th.tensor(2.0 * th.pi))) * self.action_space.shape[0]
+                + th.sum(new_log_std, dim=-1)
+            ).detach()
         
         # entropy = 0.5 * self.action_space.shape[0] * (1 + th.log(th.tensor(2*th.pi)))
         # entropy += torch.sum(log_std, dim=-1)
@@ -285,32 +285,32 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # grad_zero_f = th.autograd.grad(f_zero.sum(), zero_points, create_graph=True)[0]
         
         # calc hessian matrix
-        def f_single(latent_b, action_b):
-            return self.advantage_net(th.cat([latent_b, action_b], dim=-1)).squeeze(-1)
+        # def f_single(latent_b, action_b):
+        #     return self.advantage_net(th.cat([latent_b, action_b], dim=-1)).squeeze(-1)
 
-        def hess_single(latent_b, action_b):
-            # 只对 action_b 求 Hessian
-            return hessian(lambda x: f_single(latent_b, x))(action_b)
+        # def hess_single(latent_b, action_b):
+        #     # 只对 action_b 求 Hessian
+        #     return hessian(lambda x: f_single(latent_b, x))(action_b)
 
-        def adv_single(latent_b, action_b):
-            x = th.cat([latent_b, action_b], dim=-1)
-            return self.advantage_net(x).squeeze(-1)
+        # def adv_single(latent_b, action_b):
+        #     x = th.cat([latent_b, action_b], dim=-1)
+        #     return self.advantage_net(x).squeeze(-1)
 
-        grad_adv_single = jacrev(adv_single, argnums=1)
-        jacobian = vmap(grad_adv_single)(
-            latent_vf,
-            zero_points
-        ) 
+        # grad_adv_single = jacrev(adv_single, argnums=1)
+        # jacobian = vmap(grad_adv_single)(
+        #     latent_vf,
+        #     zero_points
+        # ) 
         
-        hessian_matrix = vmap(hess_single)(latent_vf, zero_points)
-        hessian_diag = th.diagonal(hessian_matrix, dim1=-2, dim2=-1)
-        sigma = th.exp(log_std).pow(2)  
-        # traces = 0.5 * th.sum(hessian_diag * sigma, dim=-1).unsqueeze(-1)
-        taylor_terms = th.sum(jacobian * mu, dim = -1) + 0.5 * th.sum(hessian_diag * sigma, dim=-1)
+        # hessian_matrix = vmap(hess_single)(latent_vf, zero_points)
+        # hessian_diag = th.diagonal(hessian_matrix, dim1=-2, dim2=-1)
+        # sigma = th.exp(log_std).pow(2)  
+        # # traces = 0.5 * th.sum(hessian_diag * sigma, dim=-1).unsqueeze(-1)
+        # taylor_terms = th.sum(jacobian * mu, dim = -1) + 0.5 * th.sum(hessian_diag * sigma, dim=-1)
         # traces = th.einsum("bii->b", hessian_matrix).unsqueeze(-1)
 
         # - 0.5 * traces
-        advantages = f_a - f_zero - taylor_terms.unsqueeze(-1)
+        advantages = f_a - f_zero
         advantages = advantages.squeeze(-1)
 
         values = self.value_net(latent_vf)
