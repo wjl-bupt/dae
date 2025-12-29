@@ -94,13 +94,19 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
 
         self.action_net = nn.Linear(self.mlp_extractor.latent_dim_pi, self.action_space.shape[0])
         self.log_std = nn.Parameter(th.zeros(self.action_space.shape[0]))
+        # self.log_std = nn.Linear(self.mlp_extractor.latent_dim_pi, self.action_space.shape[0])
+        #self.log_std = th.zeros(self.action_space.shape[0]).to(self.device)
         
         # self.log_std = nn.Linear(self.mlp_extractor.latent_dim_pi, self.action_space.shape[0])
         self.value_net = nn.Linear(self.mlp_extractor.latent_dim_vf, 1)
         self.advantage_net = nn.Sequential(
-            nn.Linear(self.mlp_extractor.latent_dim_vf + self.action_space.shape[0], 64),
+            nn.Linear(self.observation_space.shape[0] + self.action_space.shape[0], 64),
+            # nn.Linear(self.mlp_extractor.latent_dim_vf + self.action_space.shape[0], 64),
+            nn.Tanh(),
+            nn.Linear(64, 64),
             nn.Tanh(),
             nn.Linear(64, 1),
+            # nn.Linear(self.mlp_extractor.latent_dim_vf + self.action_space.shape[0], 1),
         )
         # self.log_alpha = nn.Parameter(th.tensor(math.log(0.01)))
         # self.target_entropy = self.action_space.shape[0]
@@ -188,6 +194,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
 
     def calc_meam_std(self, latent_pi):
         mu = self.action_net(latent_pi)
+        # log_std = self.log_std(latent_pi)
         log_std = self.log_std
         # mu = th.zeros_like(log_std)
         # log_std = self.log_std(latent_pi)
@@ -225,10 +232,10 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         latent_pi, latent_vf = self._extract_latent(obs)
         mean_actions, log_std = self.calc_meam_std(latent_pi)
         # NOTE(junweiluo) 25/11/29: use Gassuain
-        # distribution = self.action_dist.proba_distribution(mean_actions, log_std)
-        # actions = distribution.get_actions(deterministic=deterministic)
+        distribution = self.action_dist.proba_distribution(mean_actions, log_std)
+        actions = distribution.get_actions(deterministic=deterministic)
 
-        # log_policies = distribution.log_prob(actions)
+        log_policies = distribution.log_prob(actions)
         
         # NOTE(junweiluo): reparameter action
         # noise = th.randn_like(mean_actions)
@@ -239,11 +246,11 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         
         # NOTE(junweiluo):使用tanh的版本
         z = th.randn_like(mean_actions)
-        actions = mean_actions + z * log_std.exp()
+        # actions = mean_actions + z * log_std.exp()
         
-        log_policies = -0.5 * (((actions - mean_actions)/ log_std.exp())**2 + 2*th.log(log_std.exp()) + th.log(th.tensor(2* th.pi)))
-        log_policies = log_policies.sum(-1)
-        mean_actions = th.tanh(mean_actions) * self.action_scale + self.action_bias
+        # log_policies = -0.5 * (((actions - mean_actions)/ log_std.exp())**2 + 2*th.log(log_std.exp()) + th.log(th.tensor(2* th.pi)))
+        # log_policies = log_policies.sum(-1)
+        # mean_actions = th.tanh(mean_actions) * self.action_scale + self.action_bias
         values = self.value_net(latent_vf)
 
         return actions, mean_actions, log_policies, values, z
@@ -259,28 +266,32 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         latent_pi, latent_vf = self._extract_latent(obs)
         mean_actions, new_log_std = self.calc_meam_std(latent_pi)
 
-        # distribution = self.action_dist.proba_distribution(mean_actions, new_log_std)
-        # log_policies = distribution.log_prob(actions)
-        # entropy = distribution.entropy()
+        distribution = self.action_dist.proba_distribution(mean_actions, new_log_std)
+        log_policies = distribution.log_prob(actions)
+        entropy = distribution.entropy()
 
-        log_policies = -0.5 * (
-            ((actions - mean_actions) / new_log_std.exp())**2 + \
-            2*th.log(new_log_std.exp()) + th.log(th.tensor(2* th.pi))
-        )
-        log_policies = log_policies.sum(-1)
-        entropy = (
-                0.5 * (1.0 + th.log(th.tensor(2.0 * th.pi))) * self.action_space.shape[0]
-                + th.sum(new_log_std, dim=-1)
-            ).detach()
+        # log_policies = -0.5 * (
+        #     ((actions - mean_actions) / new_log_std.exp())**2 + \
+        #     2*th.log(new_log_std.exp()) + th.log(th.tensor(2* th.pi))
+        # )
+        # log_policies = log_policies.sum(-1)
+        # entropy = (
+        #         0.5 * (1.0 + th.log(th.tensor(2.0 * th.pi))) * self.action_space.shape[0]
+        #         + th.sum(new_log_std, dim=-1)
+        #     ).detach()
         
         # entropy = 0.5 * self.action_space.shape[0] * (1 + th.log(th.tensor(2*th.pi)))
         # entropy += torch.sum(log_std, dim=-1)
         # entropy_loss = (entropy - self.taregt_entropy).pow(2) * self.log_alpha.exp()
         
         # NOTE(junweiluo): 
-        zero_points = th.zeros_like(noise, requires_grad=True)
-        f_a = self.advantage_net(th.concat([latent_vf, actions], dim = -1))
-        f_zero = self.advantage_net(th.concat([latent_vf, zero_points], dim = -1))
+        zero_points = th.zeros_like(mu)
+
+        f_a = self.advantage_net(th.concat([obs, actions], dim = -1))
+        f_zero = self.advantage_net(th.concat([obs, zero_points], dim = -1))
+
+        # f_a = self.advantage_net(th.concat([latent_vf, actions], dim = -1))
+        # f_zero = self.advantage_net(th.concat([latent_vf, zero_points], dim = -1))
 
         # grad_zero_f = th.autograd.grad(f_zero.sum(), zero_points, create_graph=True)[0]
         
@@ -309,7 +320,10 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # taylor_terms = th.sum(jacobian * mu, dim = -1) + 0.5 * th.sum(hessian_diag * sigma, dim=-1)
         # traces = th.einsum("bii->b", hessian_matrix).unsqueeze(-1)
 
-        # - 0.5 * traces
+        # - 0.5 * traces   
+        # use noise
+        # advantages = f_a - f_zero + th.randn_like(f_zero.detach()) * 1e-5
+        # no noise
         advantages = f_a - f_zero
         advantages = advantages.squeeze(-1)
 

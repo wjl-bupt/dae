@@ -8,16 +8,25 @@ HPARAM_FILE="/root/dae/params/CustomPPO_mujoco.yml"
 THREADS=32
 LOGGING="--logging"
 USE_WANDB="--use_wandb"
-PROJECT="CustomPPO-mujoco"
+PROJECT="customppo-con"
 
 # Mujoco 环境列表
 ENVS=(
     "Ant-v5"
-    # "Hopper-v5"
-    # "Walker2d-v5"
-    # "HalfCheetah-v5"
-    # "HumanoidStandup-v5"
+    "Swimmer-v5"
+    "Reacher-v5"
+    "Pusher-v5"
+    "InvertedPendulum-v5"
+    "InvertedDoublePendulum-v5"
+
+    "Hopper-v5"
+    "Walker2d-v5"
+    "HalfCheetah-v5"
+    "Humanoid-v5"
+    "HumanoidStandup-v5"
+
 )
+
 
 # 运行的最大 seed 数量
 MAX_SEED=5

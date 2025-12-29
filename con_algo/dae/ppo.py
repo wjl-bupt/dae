@@ -417,7 +417,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 # log_alpha
                 loss = (
                     policy_loss
-                    + entropy_loss
+                    + self.ent_coef * entropy_loss
                     + self.kl_coef * kl_loss
                     + self.vf_coef * value_loss
                     # + 0.5 * th.mean(approx_expectation**2)
@@ -474,7 +474,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("train/ratio_mean", ratio.detach().cpu().mean().item())
         # self.logger.record("train/trace", trace.cpu().mean().item())
         self.logger.record("train/log_std", log_std.cpu().mean().item())  
-        self.logger.record("train/alpha", self.policy.log_alpha.exp().item()) 
+        # self.logger.record("train/alpha", self.policy.log_alpha.exp().item()) 
 
         # add some metric to log.
         concat_values = th.concat(values, dim = -1)
