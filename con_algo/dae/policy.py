@@ -100,10 +100,10 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # self.log_std = nn.Linear(self.mlp_extractor.latent_dim_pi, self.action_space.shape[0])
         self.value_net = nn.Linear(self.mlp_extractor.latent_dim_vf, 1)
         self.advantage_net = nn.Sequential(
-            nn.Linear(self.observation_space.shape[0] + self.action_space.shape[0], 64),
-            # nn.Linear(self.mlp_extractor.latent_dim_vf + self.action_space.shape[0], 64),
+            nn.Linear(self.mlp_extractor.latent_dim_vf + self.action_space.shape[0], 64),
             nn.Tanh(),
             nn.Linear(64, 64),
+            # nn.Linear(self.mlp_extractor.latent_dim_vf + self.action_space.shape[0], 64),
             nn.Tanh(),
             nn.Linear(64, 1),
             # nn.Linear(self.mlp_extractor.latent_dim_vf + self.action_space.shape[0], 1),
@@ -137,7 +137,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 self.mlp_extractor: np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net: 1,
-                self.advantage_net: 0.1,
+                self.advantage_net: 1,
                 # 
             }
             for module, gain in module_gains.items():
@@ -287,8 +287,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # NOTE(junweiluo): 
         zero_points = th.zeros_like(mu)
 
-        f_a = self.advantage_net(th.concat([obs, actions], dim = -1))
-        f_zero = self.advantage_net(th.concat([obs, zero_points], dim = -1))
+        f_a = self.advantage_net(th.concat([latent_vf, actions], dim = -1))
+        f_zero = self.advantage_net(th.concat([latent_vf, zero_points], dim = -1))
 
         # f_a = self.advantage_net(th.concat([latent_vf, actions], dim = -1))
         # f_zero = self.advantage_net(th.concat([latent_vf, zero_points], dim = -1))
@@ -313,23 +313,28 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         #     zero_points
         # ) 
         
-        # hessian_matrix = vmap(hess_single)(latent_vf, zero_points)
+        # hessian_matrix = vmap(hess_single)(
+        #     obs, 
+        #     zero_points
+        # )
         # hessian_diag = th.diagonal(hessian_matrix, dim1=-2, dim2=-1)
         # sigma = th.exp(log_std).pow(2)  
-        # # traces = 0.5 * th.sum(hessian_diag * sigma, dim=-1).unsqueeze(-1)
+        # traces = 0.5 * th.sum(hessian_diag * sigma, dim=-1).unsqueeze(-1)
         # taylor_terms = th.sum(jacobian * mu, dim = -1) + 0.5 * th.sum(hessian_diag * sigma, dim=-1)
+        # taylor_terms = th.mean(jacobian * mu, dim = -1, keepdim = True)
         # traces = th.einsum("bii->b", hessian_matrix).unsqueeze(-1)
 
         # - 0.5 * traces   
         # use noise
         # advantages = f_a - f_zero + th.randn_like(f_zero.detach()) * 1e-5
         # no noise
-        advantages = f_a - f_zero
+        ex_adv =  f_zero
+        advantages = f_a - ex_adv.mean()
         advantages = advantages.squeeze(-1)
 
         values = self.value_net(latent_vf)
         
-        return values, advantages, log_policies, entropy
+        return values, advantages, log_policies, entropy, ex_adv.squeeze(-1)
         # return values, advantages, log_probs, distribution.entropy()
     
     def evaluate_state(
@@ -362,7 +367,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         if actions is None:
             advantages = None
         else:
-            values, advantages, log_probs, entropy = self.evaluate_actions(obs, actions, mu, log_std, noise)
+            values, advantages, log_probs, entropy, _ = self.evaluate_actions(obs, actions, mu, log_std, noise)
             # build \pi-centered advantage constrant
             # advantages = advantages - advantages_mu
         # keep \pi-centered advantage constrant

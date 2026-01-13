@@ -222,7 +222,7 @@ if __name__ == "__main__":
     
     for _env in args.envs:
         print(f"Learning Env: {_env}")
-        logdir = f"./logs/{_env}/{args.run_id}" if args.logging else None
+        logdir = f"./logs/{args.algo}/{_env}/{args.run_id}" if args.logging else None
 
 
         env, frameskip = get_env(_env, nenvs, args, logdir)

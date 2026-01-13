@@ -273,8 +273,9 @@ class CustomPPO(OnPolicyAlgorithm):
     def _normalize_advantage(self, advantages, policies, eps=1e-8):
 
         # std = (policies * advantages.pow(2)).mean().sqrt()
-        # return advantages / (advantages.std() + eps)
-        return (advantages - advantages.mean() ) / (advantages.std() + eps)
+        return advantages / (advantages.std() + eps)
+
+        # return (advantages - advantages.mean() ) / (advantages.std() + eps)
 
     def _value_loss(self, deltas, values, lasts):
         loss = th.cat(
@@ -346,10 +347,12 @@ class CustomPPO(OnPolicyAlgorithm):
         q_values = []
         log_std = self.policy.log_std
         
-        with th.no_grad():
-            self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size)
+
         
         for epoch in range(self.n_epochs):
+            with th.no_grad():
+                self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size)
+
             for data in self.rollout_buffer.get_trajs(batch_size=self.batch_size):
                 # old_policies = data.old_policies
                 old_log_policies = data.old_log_policies
@@ -358,7 +361,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 rewards = data.rewards
                 last_values = data.last_values
                 lengths = data.lengths
-                # advantages_ = data.advantages
+                advantages_ = data.advantages
                 noises = data.noises
 
                 (
@@ -367,6 +370,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     log_policies,
                     entropy,
                     # entropy_loss,
+                    ex_adv,
                 ) = self.policy.evaluate_state(data.observations, actions, mu, log_std, noises)
 
                 # value loss
@@ -398,7 +402,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 # )
 
                 # normalize adv
-                advantages_ = advantages.detach().clone()
+                # advantages_ = advantages.detach().clone()
                 if self.advantage_normalization:
                     advantages_ = self._normalize_advantage(advantages_, policies = None)
 
@@ -420,6 +424,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     + self.ent_coef * entropy_loss
                     + self.kl_coef * kl_loss
                     + self.vf_coef * value_loss
+                    # + (ex_adv**2).mean()
                     # + 0.5 * th.mean(approx_expectation**2)
                     # + self.vf_coef * (advantages.mean())**2
                 )
@@ -473,7 +478,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
         self.logger.record("train/ratio_mean", ratio.detach().cpu().mean().item())
         # self.logger.record("train/trace", trace.cpu().mean().item())
-        self.logger.record("train/log_std", log_std.cpu().mean().item())  
+        # self.logger.record("train/log_std", log_std.cpu().mean().item())  
         # self.logger.record("train/alpha", self.policy.log_alpha.exp().item()) 
 
         # add some metric to log.
