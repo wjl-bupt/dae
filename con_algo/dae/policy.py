@@ -99,30 +99,34 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         
         # self.log_std = nn.Linear(self.mlp_extractor.latent_dim_pi, self.action_space.shape[0])
         self.value_net = nn.Linear(self.mlp_extractor.latent_dim_vf, 1)
-        self.advantage_net = nn.Sequential(
-            nn.Linear(self.mlp_extractor.latent_dim_vf + self.action_space.shape[0], 64),
-            nn.Tanh(),
+        # self.share_adv_extratc_net = nn.Sequential(
+        #     nn.Linear(self.observation_space.shape[0], 64),
+        #     nn.ReLU(),
+        #     nn.Linear(64, 64),
+        #     nn.ReLU(),
+        # )
+        # self.adv_g = nn.Sequential(
+        #     # nn.Linear(self.mlp_extractor.latent_dim_vf, 64),
+        #     # nn.Tanh(),
+        #     nn.Linear(64, self.action_space.shape[0])
+        # )
+        # self.adv_d = nn.Sequential(
+        #     # nn.Linear(self.mlp_extractor.latent_dim_vf, 64),
+        #     # nn.Tanh(),
+        #     nn.Linear(64, self.action_space.shape[0])
+        # )
+
+        self.adv_extract_obs = nn.Sequential(
+            nn.Linear(self.observation_space.shape[0], 64),
+            nn.ReLU(),
             nn.Linear(64, 64),
-            # nn.Linear(self.mlp_extractor.latent_dim_vf + self.action_space.shape[0], 64),
-            nn.Tanh(),
+            nn.ReLU(),
+        )
+
+        self.advantage_net = nn.Sequential(
+            nn.Linear(64 + self.action_space.shape[0], 64),
+            nn.ReLU(),
             nn.Linear(64, 1),
-            # nn.Linear(self.mlp_extractor.latent_dim_vf + self.action_space.shape[0], 1),
-        )
-        # self.log_alpha = nn.Parameter(th.tensor(math.log(0.01)))
-        # self.target_entropy = self.action_space.shape[0]
-        self.register_buffer(
-            "action_scale",
-            th.tensor(
-                (self.action_space.high - self.action_space.low) / 2.0,
-                dtype=th.float32,
-            ),
-        )
-        self.register_buffer(
-            "action_bias",
-            th.tensor(
-                (self.action_space.high + self.action_space.low) / 2.0,
-                dtype=th.float32,
-            ),
         )
 
         # Init weights: use orthogonal initialization
@@ -137,7 +141,9 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 self.mlp_extractor: np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net: 1,
-                self.advantage_net: 1,
+                # self.adv_d : 0.1,
+                # self.adv_g : 0.1,
+                self.advantage_net: 0.1,
                 # 
             }
             for module, gain in module_gains.items():
@@ -254,7 +260,67 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         values = self.value_net(latent_vf)
 
         return actions, mean_actions, log_policies, values, z
-    
+
+    # def evaluate_actions(
+    #     self,
+    #     obs: th.Tensor,
+    #     actions: th.Tensor,
+    #     mu: th.Tensor,
+    #     log_std: th.Tensor,
+    #     noise: th.Tensor,
+    #     epsilon: float = 1e-8,
+    # ):
+    #     obs = obs.float()
+
+    #     # =========================
+    #     # 1. feature extraction
+    #     # =========================
+    #     latent_pi, latent_vf = self._extract_latent(obs)
+
+    #     mean_actions, new_log_std = self.calc_meam_std(latent_pi)
+
+    #     # =========================
+    #     # 2. action distribution
+    #     # =========================
+    #     distribution = self.action_dist.proba_distribution(
+    #         mean_actions, new_log_std
+    #     )
+    #     log_policies = distribution.log_prob(actions)
+    #     entropy = distribution.entropy()
+
+    #     # =========================
+    #     # 3. FIRST-ORDER ADVANTAGE
+    #     # =========================
+    #     # g(s) ≈ ∂Q/∂a |_{a=μ}
+    #     latent_adv = self.share_adv_extratc_net(obs)
+    #     g = self.adv_g(latent_adv)           # [B, act_dim]
+
+    #     # second-order (diagonal, positive)
+    #     d = self.adv_d(latent_adv)
+    #     d = th.nn.functional.softplus(d) + 1e-6
+    #     # linear term: b(s)^T (a - μ)
+    #     delta = actions - mu
+    #     adv_linear = th.sum(g * delta, dim=-1)
+
+    #     # quadratic term: 0.5 (a - μ)^T C (a - μ)
+    #     adv_quad = 0.5 * th.sum(d * delta * delta, dim=-1)
+
+    #     # exact baseline: 0.5 * tr(C Σ)
+    #     baseline = 0.5 * th.sum(d * (2 * log_std).exp(), dim=-1)
+
+    #     advantages = adv_linear + adv_quad - baseline
+
+    #     # A(s,a) = g(s)^T (a - μ(s))
+    #     # advantages = th.sum(g * delta_a, dim=-1)    # [B]
+
+    #     # =========================
+    #     # 4. value function
+    #     # =========================
+    #     values = self.value_net(latent_vf).squeeze(-1)
+
+    #     return values, advantages, log_policies, entropy, g
+
+
     def evaluate_actions(
         self, obs: th.Tensor, actions: th.Tensor, 
         mu: th.Tensor, log_std: th.Tensor,
@@ -286,9 +352,10 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         
         # NOTE(junweiluo): 
         zero_points = th.zeros_like(mu)
+        latent_adv = self.adv_extract_obs(obs)
 
-        f_a = self.advantage_net(th.concat([latent_vf, actions], dim = -1))
-        f_zero = self.advantage_net(th.concat([latent_vf, zero_points], dim = -1))
+        f_a = self.advantage_net(th.concat([latent_adv, actions], dim = -1))
+        f_zero = self.advantage_net(th.concat([latent_adv, mu], dim = -1))
 
         # f_a = self.advantage_net(th.concat([latent_vf, actions], dim = -1))
         # f_zero = self.advantage_net(th.concat([latent_vf, zero_points], dim = -1))
@@ -296,12 +363,12 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # grad_zero_f = th.autograd.grad(f_zero.sum(), zero_points, create_graph=True)[0]
         
         # calc hessian matrix
-        # def f_single(latent_b, action_b):
-        #     return self.advantage_net(th.cat([latent_b, action_b], dim=-1)).squeeze(-1)
+        def f_single(latent_b, action_b):
+            return self.advantage_net(th.cat([latent_b, action_b], dim=-1)).squeeze(-1)
 
-        # def hess_single(latent_b, action_b):
-        #     # 只对 action_b 求 Hessian
-        #     return hessian(lambda x: f_single(latent_b, x))(action_b)
+        def hess_single(latent_b, action_b):
+            # 只对 action_b 求 Hessian
+            return hessian(lambda x: f_single(latent_b, x))(action_b)
 
         # def adv_single(latent_b, action_b):
         #     x = th.cat([latent_b, action_b], dim=-1)
@@ -309,18 +376,19 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
 
         # grad_adv_single = jacrev(adv_single, argnums=1)
         # jacobian = vmap(grad_adv_single)(
-        #     latent_vf,
-        #     zero_points
+        #     latent_adv,
+        #     mu,
         # ) 
         
-        # hessian_matrix = vmap(hess_single)(
-        #     obs, 
-        #     zero_points
-        # )
-        # hessian_diag = th.diagonal(hessian_matrix, dim1=-2, dim2=-1)
-        # sigma = th.exp(log_std).pow(2)  
+        hessian_matrix = vmap(hess_single)(
+            latent_adv, 
+            mu,
+        )
+        hessian_diag = th.diagonal(hessian_matrix, dim1=-2, dim2=-1)
+        sigma = th.exp(log_std).pow(2)  
         # traces = 0.5 * th.sum(hessian_diag * sigma, dim=-1).unsqueeze(-1)
         # taylor_terms = th.sum(jacobian * mu, dim = -1) + 0.5 * th.sum(hessian_diag * sigma, dim=-1)
+        taylor_terms = 0.5 * th.sum(hessian_diag * sigma, dim=-1)
         # taylor_terms = th.mean(jacobian * mu, dim = -1, keepdim = True)
         # traces = th.einsum("bii->b", hessian_matrix).unsqueeze(-1)
 
@@ -328,8 +396,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # use noise
         # advantages = f_a - f_zero + th.randn_like(f_zero.detach()) * 1e-5
         # no noise
-        ex_adv =  f_zero
-        advantages = f_a - ex_adv.mean()
+        ex_adv =  f_zero + taylor_terms.unsqueeze(-1)
+        advantages = f_a
         advantages = advantages.squeeze(-1)
 
         values = self.value_net(latent_vf)

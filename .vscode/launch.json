@@ -48,9 +48,9 @@
                 "--envs", "Ant-v5", 
                 "--threads", "4",
                 "--continous",
-                "--use_wandb",
-                "--logging",
-                "--project", "callback-test",
+                // "--use_wandb",
+                // "--logging",
+                // "--project", "callback-test",
                 
             ]
         }
