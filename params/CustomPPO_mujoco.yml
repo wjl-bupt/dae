@@ -4,10 +4,10 @@ clip_range:
     init: 0.1
     final: 0
     ftype: "linear"
-ent_coef: 0.0
+ent_coef: 0.01
 full_action: false
 kl_coef: 0.0
-vf_coef: 0.5
+vf_coef: 1.5
 learning_rate:
     init: 0.00025
     final: 0
