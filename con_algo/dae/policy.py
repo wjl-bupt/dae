@@ -173,21 +173,16 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         return latent_pi, latent_vf
     
     def _predict(self, obs: th.Tensor, deterministic: bool = False) -> th.Tensor:
+        
 
-        latent_pi, _ = self._extract_latent(obs)
-        # output action mean
-        mean_actions = self.action_net(latent_pi)
-        log_std = self.log_std(latent_pi)
-        # build Normal action distributin
-        normal = th.distributions.Normal(mean_actions, log_std.exp())
-        x_t = normal.rsample()  # for reparameterization trick (mean + std * N(0,1))
-        y_t = th.tanh(x_t)
-        actions = y_t * self.action_scale + self.action_bias
-        log_prob = normal.log_prob(x_t)
-        # Enforcing Action Bound
-        log_prob -= th.log(self.action_scale * (1 - y_t.pow(2)) + 1e-6)
-        log_prob = log_prob.sum(1, keepdim=True)
-        mean = th.tanh(mean) * self.action_scale + self.action_bias
+        obs = obs.float()
+        latent_pi, latent_vf = self._extract_latent(obs)
+        mean_actions, log_std = self.calc_meam_std(latent_pi)
+        if deterministic:
+            actions = mean_actions
+        else:
+            dist = self.action_dist.proba_distribution(mean_actions, log_std)
+            actions = dist.sample()          
         
         return actions
 

@@ -49,7 +49,7 @@
                 "--threads", "4",
                 "--continous",
                 // "--use_wandb",
-                // "--logging",
+                "--logging",
                 // "--project", "callback-test",
                 
             ],

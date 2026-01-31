@@ -1,5 +1,10 @@
+
 import torch as th
 import torch.nn as nn
+import os
+import numpy as np
+from time import time   
+from stable_baselines3.common.callbacks import BaseCallback
 from torch.distributions import Normal
 from typing import Optional, TypeVar
 from stable_baselines3.common.distributions import sum_independent_dims
@@ -65,24 +70,75 @@ class DiagGaussianDistribution:
         return self.get_actions(deterministic=deterministic)
 
 
-class CustomPPOActor(nn.Module):
-    def __init__(self, obervation_dim, action_dim, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.actor_feature_extractor = \
-            nn.Sequential(
-                nn.Linear(obervation_dim, 64),
-                nn.Tanh(),
-                nn.Linear(64, 64),
-                nn.Tanh(),
+
+class PeriodicCheckpointCallback(BaseCallback):
+    def __init__(self, save_freq: int, save_path: str, verbose=0):
+        super().__init__(verbose)
+        self.save_freq = save_freq
+        self.save_path = save_path
+
+    def _on_training_start(self) -> None:
+        os.makedirs(self.save_path, exist_ok=True)
+
+    def _on_step(self) -> bool:
+        # num_timesteps 是“全局 timesteps”
+        if self.num_timesteps % self.save_freq == 0 or not hasattr(self, "_saved_init"):
+            # time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
+            path = os.path.join(
+                self.save_path,
+                f"model_{self.num_timesteps}.pth"
             )
-        
-        self.action_head = nn.Linear(64, action_dim)
-        self.log_std = nn.Parameter(th.zeros(action_dim))
-    
-    def forward(self, obs):
-        latent_pi = self.actor_feature_extractor(obs)
-        mean_actions = self.action_head(latent_pi)
-        return mean_actions, self.log_std
+            self.model.save(path)
+            self._saved_init = True
+            if self.verbose > 0:
+                print(f"Saved model to {path}")
+        return True
+
+
+class EvalCallback(BaseCallback):
+    def __init__(self, eval_env, n_eval_episodes=64, eval_freq=100_000,
+                 gamma=0.99, lambda_gae=0.95, verbose=1):
+        super().__init__(verbose)
+        self.eval_env = eval_env
+        self.eval_freq = eval_freq
+        self.n_eval_episodes = n_eval_episodes
+        self.gamma = gamma
+        self.lambda_gae = lambda_gae
+        self.last_eval_step = 0
+
+    def _on_step(self) -> bool:
+        # 每 eval_freq 步评估一次
+        if self.num_timesteps - self.last_eval_step >= self.eval_freq:
+            self.last_eval_step = self.num_timesteps
+            total_returns = []
+
+            for ep in range(self.n_eval_episodes):
+                obs = self.eval_env.reset()
+                done = False
+                rewards = []
+
+                while not done:
+                    action, _ = self.model.predict(obs, deterministic=True)
+                    obs, reward, done, info = self.eval_env.step(action)
+                    rewards.append(reward)
+
+                total_returns.append(np.sum(rewards))
+
+            # 返回评估指标
+            mean_return = np.mean(total_returns)
+            std_return = np.std(total_returns)
+
+            # 可打印
+            if self.verbose > 0:
+                print(f"[Step {self.num_timesteps}] Eval mean: {mean_return:.2f}, std: {std_return:.2f}")
+
+            # TensorBoard log
+            self.logger.record("eval/ep_return_mean", mean_return)
+            self.logger.record("eval/ep_return_std", std_return)
+
+            # 可选保存模型
+
+        return True
 
 
 

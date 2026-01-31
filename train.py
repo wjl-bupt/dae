@@ -28,7 +28,8 @@ from gymnasium.wrappers import (
     NormalizeObservation, TransformObservation,
     NormalizeReward, TransformReward
 )
-
+from con_algo.util import PeriodicCheckpointCallback, EvalCallback
+from stable_baselines3.common.callbacks import CallbackList
 
 
 def get_args():
@@ -222,16 +223,17 @@ if __name__ == "__main__":
     
     for _env in args.envs:
         print(f"Learning Env: {_env}")
-        logdir = f"./logs/{args.algo}/{_env}/{args.run_id}" if args.logging else None
+        time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
+        cur_timestamp = int(time())
+        logdir = f"./logs/{args.algo}/{_env}/{args.run_id}_seed{args.seed}_{time_str}_{cur_timestamp}" if args.logging else None
 
 
         env, frameskip = get_env(_env, nenvs, args, logdir)
         env = VecMonitor(env)
         
-
+        callbacks_list = []
         if args.use_wandb:
-            time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
-            cur_timestamp = int(time())
+
             if args.algo == "PPO":
                 use_full_action = False
             else:
@@ -251,6 +253,7 @@ if __name__ == "__main__":
             wandb_callback = WandbCallback(
                 verbose=2,
             )
+            callbacks_list.append(wandb_callback)
         else:
             wandb_callback = None
         
@@ -266,12 +269,27 @@ if __name__ == "__main__":
         else:
             policy_kwargs = hparam.get("policy_kwargs", dict())
         hparam["policy_kwargs"] = policy_kwargs
+        
+        if logdir is not None:
+            checkpoints_callback = PeriodicCheckpointCallback(save_freq=1_000_000, save_path=logdir)
+            eval_env = get_env(_env, envs=1, args=args, logdir=logdir)[0]
+            eval_callback = EvalCallback(eval_env=eval_env, n_eval_episodes=16, eval_freq=200_000)
+            callbacks_list.append(checkpoints_callback)
+            callbacks_list.append(eval_callback)
+        else:
+            checkpoints_callback = None
+        
+        if len(callbacks_list) > 0: 
+            callbacks_list = CallbackList(callbacks_list)
+        else:
+            callbacks_list = None    
+            
             
         algo = algo_cls(
             policy, env, verbose=1, tensorboard_log=logdir, seed=args.seed, **hparam
         )
 
-        algo.learn(args.steps, callback=wandb_callback)
+        algo.learn(args.steps, callback=callbacks_list)
         finish(env, algo, args.steps * frameskip)
         overall = np.mean(env.scores)
         last = np.mean(env.scores[-100:])
