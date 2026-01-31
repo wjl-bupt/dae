@@ -10,5 +10,5 @@ learning_rate:
     final: 0
     ftype: "linear"
 n_epochs: 10
-n_steps: 128
+n_steps: 256
 nenvs: 32

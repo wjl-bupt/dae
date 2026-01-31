@@ -116,19 +116,6 @@ def get_default_hparam(args):
 
 # NOTE(junweiluo): add mujoco env maker
 def get_mujoco_env(e, envs, args, logdir):
-
-    # def _make_env():
-    #     env = gym.make(e)
-    #     env = FlattenObservation(env)
-    #     env = RecordEpisodeStatistics(env)
-    #     env = ClipAction(env) 
-    #     env = NormalizeObservation(env)
-    #     env = TransformObservation(env, lambda obs: np.clip(obs, -10, 10), observation_space = env.observation_space)
-    #     env = NormalizeReward(env)
-    #     env = TransformReward(env, lambda reward: np.clip(reward, -10, 10))
-    #     return env
-    # env_fns = [_make_env for _ in range(envs)]
-    # register_envs()
     env = make_vec_env(
         env_id=e,
         n_envs=envs,
@@ -137,6 +124,7 @@ def get_mujoco_env(e, envs, args, logdir):
         vec_env_kwargs=dict(threads=args.threads),
         # wrapper_class=ClipAction,
     )
+    # env = ClipAction(env)
     from stable_baselines3.common.vec_env import VecNormalize
     env = VecNormalize(env, norm_obs=True, norm_reward=True)
     env = VecLogger(env, logdir)

@@ -226,9 +226,11 @@ class CustomBuffer(BaseBuffer):
             _mu = self.mu[start:end]
             _noise = self.noises[start:end]
             with th.no_grad():
-                _, adv = policy.predict_value(_obs, _act, _mu, log_std, _noise)
+                _, adv, _, _ = policy.predict_value(_obs, _act, _mu, log_std, _noise)
             self.advantages[start:end] = adv
             start = end
+        
+        
 
     def get(
         self, batch_size: Optional[int] = None
@@ -248,6 +250,9 @@ class CustomBuffer(BaseBuffer):
             start_idx += batch_size
 
     def _get_samples(self, indices) -> CustomSamples:
+        
+        # raw_adv = self.advantages.index_select(dim=0, index=indices)
+        # norm_adv = self.advantages - self.advantages.mean() / (raw_adv.mean() )
 
         data = (
             self.observations.index_select(dim=0, index=indices),
