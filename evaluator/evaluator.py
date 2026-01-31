@@ -15,6 +15,7 @@ import numpy as np
 import torch as th
 from con_algo.dae.policy import CustomActorCriticPolicy as daefunc
 from con_algo.vanilla_ppo.policy import VanillaPPOAC as gaefunc
+from evaluator.rollout_collector import create_vector_env,  RolloutCollector
 
 
 class Evaluator:
@@ -33,60 +34,22 @@ class Evaluator:
         
 
     def collect_traj(self, num_episodes: int = 100):
-        save_path = f"./trajectories/{self.eval_policy}_episodes{num_episodes}_traj.pkl"
+        collector = RolloutCollector(self.env, self.policy, self.eval_policy)
+        return collector.collect_rollouts(num_episodes)
+    
+    def dae(self, obs, actions, rewards, dones, values, next_values, gamma=0.99, lam=0.95):
+        deltas = rewards + gamma * next_values * (1 - dones) - values
+        advantages = np.zeros_like(rewards)
+        adv = 0.0
+        for t in reversed(range(len(rewards))):
+            adv = deltas[t] + gamma * lam * (1 - dones[t]) * adv
+            advantages[t] = adv
+        return advantages
 
-        buffers = []  # 存最终完整轨迹
-        num_collected = 0
-
-        obs, _ = self.env.reset()
-        num_envs = obs.shape[0]
-
-        # 每个并行环境一个 trajectory buffer
-        traj_buffers = [SingleTrajctoryBuffer() for _ in range(num_envs)]
-
-        while num_collected < num_episodes:
-            obs_tensor = th.tensor(obs, dtype=th.float32)
-
-            with th.no_grad():
-                actions, _, _, _ = self.policy.forward(obs_tensor)
-
-            actions = actions.cpu().numpy()
-
-            next_obs, rewards, terminated, truncated, _ = self.env.step(actions)
-            dones = terminated | truncated
-
-            for env_id in range(num_envs):
-                traj_buffers[env_id].add(
-                    obs[env_id],
-                    actions[env_id],
-                    rewards[env_id],
-                    dones[env_id],
-                )
-
-                if dones[env_id]:
-                    # 一条完整轨迹结束
-                    single_traj = traj_buffers[env_id].get_trajectory()
-                    single_traj["returns"] = traj_buffers[env_id].compute_returns(
-                        gamma=0.99
-                    )
-
-                    buffers.append(single_traj)
-                    num_collected += 1
-
-                    # 重置该环境对应的 buffer
-                    traj_buffers[env_id] = SingleTrajctoryBuffer()
-
-                    if num_collected >= num_episodes:
-                        break
-
-            obs = next_obs
-
-        with open(save_path, "wb") as f:
-            pickle.dump(buffers, f)
-
-        logger.success(f"Collected {num_collected} trajectories")
-        logger.success(f"Trajectories saved to {save_path}")
-
+    def compute_advantage(self, traj_data: dict, method: str = "dae"):
+        if method not in self.advantage_funcs:
+            raise ValueError(f"Unknown advantage function: {method}")
+        return self.advantage_funcs[method](traj_data)
 
     def evaluate(self) -> float:
         total_rewards = []
@@ -100,7 +63,7 @@ class Evaluator:
                     action, _, _, _ = self.policy.forward(obs_tensor)
                 action = action.squeeze(0).cpu().numpy()
                 obs, reward, terminated, truncated, _ = self.env.step(action)
-                done = terminated or truncated
+                done = terminated
                 episode_reward += reward
             total_rewards.append(episode_reward)
         avg_reward = np.mean(total_rewards)

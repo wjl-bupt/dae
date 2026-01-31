@@ -87,8 +87,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         #     nn.Tanh(),
         # )
 
-        hidden_dim = 64
-        self.actor_feature_extractor = SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2, hidden_dim = hidden_dim)
+        hidden_dim = 256
+        self.actor_feature_extractor = SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2, hidden_dim = hidden_dim, activation = nn.Tanh())
         self.action_net = nn.Linear(hidden_dim, self.action_space.shape[0])
 
         # self.action_net = nn.Linear(64, self.action_space.shape[0])

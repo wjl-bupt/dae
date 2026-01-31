@@ -198,7 +198,7 @@ class CustomPPO(OnPolicyAlgorithm):
 
         callback.on_rollout_start()
         for _ in range(n_rollout_steps):
-            self._last_obs = self._last_obs / 10.0 
+            # self._last_obs = self._last_obs / 10.0 
             with th.no_grad():
                 # Convert to pytorch tensor
                 obs_tensor = th.as_tensor(self._last_obs, device=self.device)

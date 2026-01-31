@@ -9,6 +9,7 @@
 
 import pickle
 import torch as th
+import numpy as np
 from loguru import logger
 import gymnasium as gym
 from gymnasium.vector import SyncVectorEnv
@@ -104,7 +105,7 @@ class RolloutCollector:
             actions = actions.cpu().numpy()
 
             next_obs, rewards, terminated, truncated, _ = self.env.step(actions)
-            dones = terminated | truncated
+            dones = terminated
 
             for env_id in range(num_envs):
                 active_trajs[env_id].add(

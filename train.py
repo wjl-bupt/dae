@@ -21,6 +21,7 @@ import argparse
 import numpy as np
 import os
 import yaml
+import torch.nn as nn
 import gymnasium as gym
 from gymnasium.wrappers import (
     FlattenObservation, RecordEpisodeStatistics, ClipAction, 
@@ -189,12 +190,23 @@ if __name__ == "__main__":
     else:
         from con_algo.dae.ppo import CustomPPO
         from con_algo.dae.policy import CustomActorCriticPolicy
+        from con_algo.vanilla_ppo.policy import SimBaFeaturesExtractor
         if args.algo == "CustomPPO":
             algo_cls = CustomPPO
             policy = CustomActorCriticPolicy
         elif args.algo == "PPO":
-            algo_cls = PPO
+            from con_algo.vanilla_ppo.ppo import VanillaPPO
+            algo_cls = VanillaPPO
             policy = "MlpPolicy"
+            # policy = SimBaFeaturesExtractor
+        elif args.algo == "QVPPO":
+            algo_cls = QVPPO
+            policy = QVActorCriticPolicy
+        elif args.algo == "A2C":
+            from con_algo.a2c.a2c import CustomA2C
+            from con_algo.a2c.policy import CustomActorCriticPolicy as A2CPolicy
+            algo_cls = CustomA2C
+            policy = A2CPolicy
         get_env = get_mujoco_env
 
     hparam, nenvs = load_hparam(args.hparam_file)
@@ -241,7 +253,19 @@ if __name__ == "__main__":
             )
         else:
             wandb_callback = None
-            
+        
+        if args.algo == "PPO":
+            policy_kwargs = dict(
+                features_extractor_class=SimBaFeaturesExtractor,
+                features_extractor_kwargs=dict(
+                    block_num=2,
+                    hidden_dim=256,
+                    activation=nn.Tanh(),
+                ),
+            )
+        else:
+            policy_kwargs = hparam.get("policy_kwargs", dict())
+        hparam["policy_kwargs"] = policy_kwargs
             
         algo = algo_cls(
             policy, env, verbose=1, tensorboard_log=logdir, seed=args.seed, **hparam

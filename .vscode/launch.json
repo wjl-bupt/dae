@@ -52,7 +52,8 @@
                 // "--logging",
                 // "--project", "callback-test",
                 
-            ]
+            ],
+            "justMyCode": false,
         }
     ]
 }

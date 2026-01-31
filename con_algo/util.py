@@ -87,19 +87,18 @@ class CustomPPOActor(nn.Module):
 
 
 class ResidualBlock(nn.Module):
-    def __init__(self, input_dim, hidden_dim = None, *args, **kwargs):
+    def __init__(self, input_dim, hidden_dim = None, activation = nn.SiLU(),*args, **kwargs):
         super().__init__(*args, **kwargs)
         if hidden_dim == None:
             hidden_dim = input_dim * 4
-        self.layer_norm = nn.LayerNorm(input_dim)
+        # self.layer_norm = nn.LayerNorm(input_dim)
         self.block = nn.Sequential(
+            nn.LayerNorm(input_dim),
             nn.Linear(input_dim, hidden_dim),
             # nn.GELU(approximate="tanh"),
-            nn.LayerNorm(hidden_dim),
-            nn.SiLU(),
+            activation,
             nn.Linear(hidden_dim, input_dim),
-            nn.LayerNorm(input_dim),
-            nn.SiLU(),
+            # activation,
         )
     
     def forward(self, x):
@@ -109,18 +108,18 @@ class ResidualBlock(nn.Module):
         return identity + block_out
 
 class SimBaEncoder(nn.Module):
-    def __init__(self, input_dim, block_num, hidden_dim, *args, **kwargs):
+    def __init__(self, input_dim, block_num, hidden_dim, activation = nn.SiLU(),*args, **kwargs):
         super().__init__(*args, **kwargs)
         self.pre_encoder = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.LayerNorm(hidden_dim),
-            nn.SiLU(),
+            activation,
         )
-        self.residual_encoder = nn.Sequential(*[ResidualBlock(input_dim = hidden_dim) for _ in range(block_num)])
-        # self.ln2 = nn.LayerNorm(hidden_dim)
+        self.residual_encoder = nn.Sequential(*[ResidualBlock(input_dim = hidden_dim, activation=activation) for _ in range(block_num)])
+        self.ln2 = nn.LayerNorm(hidden_dim)
     
     def forward(self, x):
         fc_out = self.pre_encoder(x)
         feature_ = self.residual_encoder(fc_out)
         
-        return feature_
+        return self.ln2(feature_)
