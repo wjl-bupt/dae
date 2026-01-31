@@ -133,8 +133,8 @@ class EvalCallback(BaseCallback):
                 print(f"[Step {self.num_timesteps}] Eval mean: {mean_return:.2f}, std: {std_return:.2f}")
 
             # TensorBoard log
-            self.logger.record("eval/ep_return_mean", mean_return)
-            self.logger.record("eval/ep_return_std", std_return)
+            self.logger.record("eval/ep_return_mean", mean_return, self.num_timesteps)
+            self.logger.record("eval/ep_return_std", std_return, self.num_timesteps)
 
             # 可选保存模型
 

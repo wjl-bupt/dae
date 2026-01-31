@@ -26,10 +26,10 @@ class VanillaPPO(PPO):
         adv_max  = advantages.max().item()
 
         # ===== 3. 记录到 logger =====
-        self.logger.record("advantage/advantage_mean", adv_mean)
-        self.logger.record("advantage/advantage_std", adv_std)
-        self.logger.record("advantage/advantage_min", adv_min)
-        self.logger.record("advantage/advantage_max", adv_max)
+        self.logger.record("advantage/advantage_mean", adv_mean, self.num_timesteps)
+        self.logger.record("advantage/advantage_std", adv_std, self.num_timesteps)
+        self.logger.record("advantage/advantage_min", adv_min, self.num_timesteps)
+        self.logger.record("advantage/advantage_max", adv_max, self.num_timesteps)
         
         # add some metrics for value function statistics
         values = self.rollout_buffer.values
@@ -41,10 +41,10 @@ class VanillaPPO(PPO):
         
         vf_max  = values.max().item()
         
-        self.logger.record("value/V_mean", vf_mean)
-        self.logger.record("value/V_std", vf_std)
-        self.logger.record("value/V_min", vf_min)
-        self.logger.record("value/V_max", vf_max)
+        self.logger.record("value/V_mean", vf_mean, self.num_timesteps)
+        self.logger.record("value/V_std", vf_std, self.num_timesteps)
+        self.logger.record("value/V_min", vf_min, self.num_timesteps)
+        self.logger.record("value/V_max", vf_max, self.num_timesteps)
         
         # add some metrics for actions statistics
         actions = self.rollout_buffer.actions
@@ -55,10 +55,10 @@ class VanillaPPO(PPO):
         act_min  = actions.min().item()       
         act_max  = actions.max().item()
         
-        self.logger.record("actions/actions_mean", act_mean)
-        self.logger.record("actions/actions_std", act_std)
-        self.logger.record("actions/actions_min", act_min)  
-        self.logger.record("actions/actions_max", act_max)
+        self.logger.record("actions/actions_mean", act_mean, self.num_timesteps)
+        self.logger.record("actions/actions_std", act_std, self.num_timesteps)
+        self.logger.record("actions/actions_min", act_min, self.num_timesteps)  
+        self.logger.record("actions/actions_max", act_max, self.num_timesteps)
 
         # ===== 4. 正常走 PPO 的 train =====
         super().train()
