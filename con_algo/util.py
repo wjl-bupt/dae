@@ -50,7 +50,7 @@ class DiagGaussianDistribution:
 
     def sample(self) -> th.Tensor:
         # Reparametrization trick to pass gradients
-        return self.distribution.rsample()
+        return self.distribution.sample()
 
     def mode(self) -> th.Tensor:
         return self.distribution.mean
@@ -59,3 +59,5 @@ class DiagGaussianDistribution:
         # Update the proba distribution
         self.proba_distribution(mean_actions, log_std)
         return self.get_actions(deterministic=deterministic)
+
+
