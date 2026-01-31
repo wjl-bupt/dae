@@ -9,6 +9,7 @@ dependencies = [
     "ale-py>=0.11.2",
     "autorom[accept-rom-license]>=0.6.1",
     "gymnasium[accept-rom-license,atari,mujoco]>=1.2.2",
+    "loguru>=0.7.3",
     "minatar>=1.0.15",
     "numpy>=2.3.5",
     "opencv-python>=4.11.0.86",
