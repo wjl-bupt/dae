@@ -90,8 +90,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         #     nn.Tanh(),
         # )
 
-        self.actor_activate_func = nn.Tanh()
-        self.critic_activate_func = nn.Tanh()
+        self.actor_activate_func = nn.ReLU()
+        self.critic_activate_func = nn.ReLU()
 
         hidden_dim = 256
         self.actor_feature_extractor = SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2, hidden_dim = hidden_dim, activation = self.actor_activate_func)
@@ -115,19 +115,20 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             self.critic_activate_func,
         )
         self.value_head = nn.Linear(hidden_dim, 1)
-        self.advantage_feature_extractor = SimBaEncoder(
-            input_dim = hidden_dim + self.action_space.shape[0], 
-            block_num = 2, 
-            hidden_dim = hidden_dim, 
-            activation=self.critic_activate_func
-        )
+        # self.advantage_feature_extractor = SimBaEncoder(
+        #     input_dim = self.observation_space.shape[0], 
+        #     block_num = 2, 
+        #     hidden_dim = hidden_dim, 
+        #     activation=self.critic_activate_func
+        # )
         self.advantage_net = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
             self.critic_activate_func,
             nn.Linear(hidden_dim, hidden_dim),
             self.critic_activate_func,
+            
         )
-        self.advantage_head = nn.Linear(hidden_dim, 1)
+        self.advantage_head = nn.Linear(hidden_dim, self.action_space.shape[0]**2)
 
         # self.value_feature_extractor = nn.Sequential(
         #     nn.Linear(self.observation_space.shape[0], 64),
@@ -166,7 +167,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 self.value_head: 1.0,
                 # self.adv_d : 0.1,
                 # self.adv_g : 0.1,
-                self.advantage_head: 0.1,
+                self.advantage_head: 1.0,
                 # 
             }
             for module, gain in module_gains.items():
@@ -182,7 +183,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 self.modules_pi, lr=lr_schedule(1), **self.optimizer_kwargs
             )
             self.modules_vf = nn.ModuleList(
-                [self.value_feature_extractor, self.advantage_feature_extractor, 
+                [self.value_feature_extractor, 
                  self.value_net, self.advantage_net, 
                  self.value_head, self.advantage_head
             ])
@@ -325,37 +326,38 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # log_policies = log_policies.sum(-1)
         entropy = dist.entropy()
         
-        # latent_adv = self.advantage_feature_extractor(th.concat([latent_adv, mu], dim = -1))
-        # clamp_actions = th.clamp(actions, self.action_space.low.mean().item(), self.action_space.high.mean().item())
+        hs = self.advantage_head(self.advantage_net(latent_vf)).view(-1, self.action_space.shape[0], self.action_space.shape[0])
+        # 只保证对称（不保证正定）
+        hs = 0.5 * (hs + hs.transpose(1, 2))
+
+        # 保证正定 + 对称
+        # hs = th.tril(hs.view(-1, self.action_space.shape[0], self.action_space.shape[0]))
+        # diag = th.diagonal(hs, dim1=1, dim2=2)
+        # hs = hs - th.diag_embed(diag) + th.diag_embed(nn.functional.softplus(diag))
+
         # tanh_mu = nn.functional.tanh(mu / th.sqrt(1 + (th.pi * log_std.exp().pow(2) / 8)))
-        # tanh_action = nn.functional.tanh(actions)
-        adv_latent_a = self.advantage_net(self.advantage_feature_extractor(th.concat([latent_vf, actions], dim = -1)))
-        f_a = self.advantage_head(adv_latent_a)
 
-        with th.no_grad():
-            anchor_actions = mu
-            adv_latent_mu = self.advantage_net(self.advantage_feature_extractor(th.concat([latent_vf, anchor_actions], dim = -1)))
-            f_anchor = self.advantage_head(adv_latent_mu)
-    
+        delta = (actions - mu).unsqueeze(-1)  # (B, action_dim, 1)
+        raw_advantages = - 0.5 * th.matmul(
+            delta.transpose(1, 2),
+            th.matmul(hs @ hs.transpose(1, 2), delta)
+        ).squeeze(-1).squeeze(-1)
         
-        # f_zero + self.calc_jacrevian_diag(latent_vf, zero_anchor, sigma) + self.calc_hessian_diag(latent_vf, zero_anchor, sigma)
-        sigma = th.exp(log_std).pow(2)
+        # E[A(s,a)]
 
-        # tanh平滑版本实现
-        # tanh_sigma = 1 - 2 / th.sqrt(1 + (th.pi * sigma.pow(2) / 4)) * th.exp(-(mu.pow(2)/ (1 + (th.pi * sigma.pow(2) / 4)))) - tanh_mu.pow(2)
-        # tanh_sigma = (1 - tanh_mu.pow(2)) / (1 + (2 / th.sqrt(1 + (th.pi * sigma / 4))))
-        # tanh_sigma = th.clamp(tanh_sigma, min = 0)
-        # trace = self.calc_jacrevian_diag(latent_vf, zero_anchor = th.zeros_like(mu),  mu=mu)
-        # trace = self.calc_hessian_diag(latent_vf, anchor_actions, sigma)
-        trace = th.zeros_like(f_anchor)
-
-        ex_adv =  f_anchor 
-        advantages = f_a - self.ema_ex_adv
-        advantages = advantages.squeeze(-1)
+        var = th.exp(2 * log_std)
+        # var = (1 - tanh_mu.pow(2)) / (1 + (2 / th.sqrt(1 + (th.pi * var / 4))))
+        ex_adv = - 0.5 * th.sum(
+            th.diagonal(hs, dim1=1, dim2=2) * var,
+            dim=1
+        )
+        # ex_adv = th.einsum("bij,bij->b", hs, var)
+        
+        advantages = raw_advantages
 
         values = self.value_head(latent_vf)
         
-        return values, advantages, log_policies, entropy, ex_adv.squeeze(-1), trace.squeeze(-1)
+        return values, advantages, log_policies, entropy, ex_adv
         # return values, advantages, log_probs, distribution.entropy()
     
     def evaluate_state(
@@ -395,9 +397,9 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         if actions is None:
             advantages = None
             values = self.value_head(latent_vf)
-            return values, advantages
+            return values, advantages, 0
         else:
-            values, advantages, log_probs, entropy, ex_adv, trace = self.evaluate_actions(obs, actions, mu, log_std, noise)
+            values, advantages, log_probs, entropy, ex_adv = self.evaluate_actions(obs, actions, mu, log_std, noise)
             # build \pi-centered advantage constrant
             # advantages = advantages - advantages_mu
-            return values, advantages, ex_adv, trace
+            return values, advantages, ex_adv

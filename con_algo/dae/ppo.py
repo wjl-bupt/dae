@@ -229,7 +229,7 @@ class CustomPPO(OnPolicyAlgorithm):
 
         with th.no_grad():
             obs_tensor = th.as_tensor(new_obs, device=self.device)
-            values, _ = self.policy.predict_value(obs_tensor)
+            values, _, _ = self.policy.predict_value(obs_tensor)
         rollout_buffer.finalize(last_values=values)
 
         callback.on_rollout_end()
@@ -379,9 +379,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     advantages,
                     log_policies,
                     entropy,
-                    # entropy_loss,
                     ex_adv,
-                    trace,
                 ) = self.policy.evaluate_state(data.observations, actions, mu, log_std, noises)
 
                 # value loss
@@ -476,7 +474,7 @@ class CustomPPO(OnPolicyAlgorithm):
             # if kl_loss.mean().item() >= 0.05:
             #     break
             
-            self.policy.ema_ex_adv = self.policy.ema_ex_adv * self.policy.ema_coef + np.mean(ex_advs).item() * (1 - self.policy.ema_coef)
+            # self.policy.ema_ex_adv = self.policy.ema_ex_adv * self.policy.ema_coef + np.mean(ex_advs).item() * (1 - self.policy.ema_coef)
 
         # Logs
         self.logger.record("train/clip_range", clip_range)
@@ -496,7 +494,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("train/loss", np.mean(losses))
         self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
         self.logger.record("train/ratio_mean", ratio.detach().cpu().mean().item())
-        self.logger.record("train/trace", trace.cpu().mean().item())
+        # self.logger.record("train/trace", trace.cpu().mean().item())
         self.logger.record("train/log_std", log_std.mean().item())  
         self.logger.record("train/std", log_std.exp().mean().item())  
         # self.logger.record("train/alpha", self.policy.log_alpha.exp().item()) 
@@ -526,11 +524,11 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("advantage/ex_adv_std", ex_adv.detach().cpu().std().item())
 
         # log raw adv
-        raw_advantages = advantages + ex_adv
-        self.logger.record("advantage/raw_advantage_mean", raw_advantages.detach().cpu().mean().item())
-        self.logger.record("advantage/raw_advantage_std", raw_advantages.detach().cpu().std().item())
-        self.logger.record("advantage/raw_advantage_max", raw_advantages.detach().cpu().max().item())
-        self.logger.record("advantage/raw_advantage_min", raw_advantages.detach().cpu().min().item())
+        # raw_advantages = advantages + ex_adv
+        # self.logger.record("advantage/raw_advantage_mean", raw_advantages.detach().cpu().mean().item())
+        # self.logger.record("advantage/raw_advantage_std", raw_advantages.detach().cpu().std().item())
+        # self.logger.record("advantage/raw_advantage_max", raw_advantages.detach().cpu().max().item())
+        # self.logger.record("advantage/raw_advantage_min", raw_advantages.detach().cpu().min().item())
 
 
         self.logger.record("actions/action_mean", actions.mean().item())
@@ -577,7 +575,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 last_values = data.last_values
                 lengths = data.lengths
 
-                values, advantages, ex_adv, trace = self.policy.predict_value(
+                values, advantages, ex_adv = self.policy.predict_value(
                     data.observations, actions, mu, self.policy.log_std.detach(), noise = data.noises
                 )
                 # value loss
@@ -586,7 +584,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     rewards - advantages
                 ).split(lengths)
                 value_loss = self._value_loss(deltas, values, last_values)
-                # value_loss += (ex_adv**2).mean()
+                value_loss += (ex_adv**2).mean()
                 # add a new loss penalty
                 self.policy.optimizer_vf.zero_grad(set_to_none=True)
                 value_loss.backward()
@@ -626,10 +624,10 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("Q_values/Q_values_min", q_values.detach().cpu().min().item())
 
         # log ex adv
-        self.logger.record("advantage/ex_adv_mean", ex_adv.detach().cpu().mean().item())
-        self.logger.record("advantage/ex_adv_max", ex_adv.detach().cpu().max().item())
-        self.logger.record("advantage/ex_adv_min", ex_adv.detach().cpu().min().item())
-        self.logger.record("advantage/ex_adv_std", ex_adv.detach().cpu().std().item())
+        # self.logger.record("advantage/ex_adv_mean", ex_adv.detach().cpu().mean().item())
+        # self.logger.record("advantage/ex_adv_max", ex_adv.detach().cpu().max().item())
+        # self.logger.record("advantage/ex_adv_min", ex_adv.detach().cpu().min().item())
+        # self.logger.record("advantage/ex_adv_std", ex_adv.detach().cpu().std().item())
 
         # 
         self.logger.record("actions/action_mean", actions.mean().item())
