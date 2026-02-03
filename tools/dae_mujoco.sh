@@ -12,10 +12,10 @@ PROJECT="mujoco-dae"
 
 # Mujoco 环境列表
 ENVS=(
-    "Ant-v5"
     "Hopper-v5"
-    "HalfCheetah-v5"
     "Humanoid-v5"
+    "HalfCheetah-v5"
+    "Ant-v5"
     # "HumanoidStandup-v5"
     "Swimmer-v5"
     "Reacher-v5"
@@ -42,7 +42,7 @@ for ENV_ID in "${ENVS[@]}"; do
         RUN_ID="${ENV_ID}_seed${SEED}"
         echo "Launching experiment: env=$ENV_ID seed=$SEED run_id=$RUN_ID"
 
-        CUDA_VISIBLE_DEVICES=1 \
+        CUDA_VISIBLE_DEVICES=2 \
         uv run python train.py \
             --algo $ALGO \
             --hparam_file $HPARAM_FILE \

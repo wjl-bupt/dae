@@ -59,7 +59,7 @@ class DiagGaussianDistribution:
 
     def sample(self) -> th.Tensor:
         # Reparametrization trick to pass gradients
-        return self.distribution.rsample()
+        return self.distribution.sample()
 
     def mode(self) -> th.Tensor:
         return self.distribution.mean
@@ -156,6 +156,10 @@ class ResidualBlock(nn.Module):
             nn.Linear(hidden_dim, input_dim),
             # activation,
         )
+
+        # self.block = nn.Sequential(
+
+        # )
     
     def forward(self, x):
         identity = x
@@ -166,6 +170,7 @@ class ResidualBlock(nn.Module):
 class SimBaEncoder(nn.Module):
     def __init__(self, input_dim, block_num, hidden_dim, activation = nn.SiLU(),*args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.activation = activation
         self.pre_encoder = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.LayerNorm(hidden_dim),
@@ -178,4 +183,4 @@ class SimBaEncoder(nn.Module):
         fc_out = self.pre_encoder(x)
         feature_ = self.residual_encoder(fc_out)
         
-        return self.ln2(feature_)
+        return self.activation(self.ln2(feature_))
