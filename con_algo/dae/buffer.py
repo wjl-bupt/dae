@@ -218,6 +218,7 @@ class CustomBuffer(BaseBuffer):
     def update_advantage(self, policy, batch_size=1024, log_std = None):
         start = 0
         size = len(self.observations)
+        gamma = 0.99
         while start < size:
             end = min(start + batch_size, size)
             _obs = self.observations[start:end]
@@ -227,6 +228,10 @@ class CustomBuffer(BaseBuffer):
             _noise = self.noises[start:end]
             with th.no_grad():
                 _, adv, _ = policy.predict_value(_obs, _act, _mu, log_std, _noise)
+            lens = len(adv)
+            # last_advlam = adv[-1]
+            for t in range(lens-2, -1, -1):
+                adv[t] = adv[t] + gamma * adv[t+1]
             self.advantages[start:end] = adv
             start = end
         

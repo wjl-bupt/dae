@@ -128,7 +128,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             self.critic_activate_func,
             
         )
-        self.advantage_head = nn.Linear(hidden_dim, self.action_space.shape[0]**2)
+        self.advantage_head = nn.Linear(hidden_dim, self.action_space.shape[0])
 
         # self.value_feature_extractor = nn.Sequential(
         #     nn.Linear(self.observation_space.shape[0], 64),
@@ -167,7 +167,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 self.value_head: 1.0,
                 # self.adv_d : 0.1,
                 # self.adv_g : 0.1,
-                self.advantage_head: 1.0,
+                self.advantage_head: 0.1,
                 # 
             }
             for module, gain in module_gains.items():
@@ -326,34 +326,39 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # log_policies = log_policies.sum(-1)
         entropy = dist.entropy()
         
-        hs = self.advantage_head(self.advantage_net(latent_vf)).view(-1, self.action_space.shape[0], self.action_space.shape[0])
+        # .view(-1, self.action_space.shape[0], self.action_space.shape[0])
+        hs = self.advantage_head(self.advantage_net(latent_vf))
         # 只保证对称（不保证正定）
-        hs = 0.5 * (hs + hs.transpose(1, 2))
+        # hs = 0.5 * (hs + hs.transpose(1, 2))
 
         # 保证正定 + 对称
         # hs = th.tril(hs.view(-1, self.action_space.shape[0], self.action_space.shape[0]))
         # diag = th.diagonal(hs, dim1=1, dim2=2)
         # hs = hs - th.diag_embed(diag) + th.diag_embed(nn.functional.softplus(diag))
 
-        # tanh_mu = nn.functional.tanh(mu / th.sqrt(1 + (th.pi * log_std.exp().pow(2) / 8)))
-
-        delta = (actions - mu).unsqueeze(-1)  # (B, action_dim, 1)
-        raw_advantages = - 0.5 * th.matmul(
-            delta.transpose(1, 2),
-            th.matmul(hs @ hs.transpose(1, 2), delta)
-        ).squeeze(-1).squeeze(-1)
-        
-        # E[A(s,a)]
+        # # tanh_mu = nn.functional.tanh(mu / th.sqrt(1 + (th.pi * log_std.exp().pow(2) / 8)))
 
         var = th.exp(2 * log_std)
-        # var = (1 - tanh_mu.pow(2)) / (1 + (2 / th.sqrt(1 + (th.pi * var / 4))))
-        ex_adv = - 0.5 * th.sum(
-            th.diagonal(hs, dim1=1, dim2=2) * var,
-            dim=1
-        )
+        delta = (actions - mu).unsqueeze(-1)  # (B, action_dim, 1)
+        delta = delta.squeeze(-1)
+        raw_advantages =  -0.5 * (hs * delta.pow(2)).sum(dim=1)
+        ex_adv = -0.5 * (hs * var).sum(dim=1)
+
+
+        # raw_advantages = - 0.5 * th.matmul(
+        #     delta.transpose(1, 2),
+        #     th.matmul(hs @ hs.transpose(1, 2), delta)
+        # ).squeeze(-1).squeeze(-1)
+        
+        # # E[A(s,a)]
+        # # var = (1 - tanh_mu.pow(2)) / (1 + (2 / th.sqrt(1 + (th.pi * var / 4))))
+        # ex_adv = - 0.5 * th.sum(
+        #     th.diagonal(hs, dim1=1, dim2=2) * var,
+        #     dim=1
+        # )
         # ex_adv = th.einsum("bij,bij->b", hs, var)
         
-        advantages = raw_advantages
+        advantages = raw_advantages - ex_adv
 
         values = self.value_head(latent_vf)
         

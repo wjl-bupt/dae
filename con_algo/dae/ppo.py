@@ -298,6 +298,24 @@ class CustomPPO(OnPolicyAlgorithm):
 
         return loss
 
+    def _compute_advantages_(self, raw_advantages):
+        advantages = []
+        for adv_series in raw_advantages:
+            lens = len(adv_series)
+            cumulative_advantages = th.zeros_like(adv_series)
+            # cumulative_advantages[-1] = raw_advantages[-1]
+            last_adv = adv_series[-1]
+            for t in range(lens - 1, -1, -1):
+                if t == (lens - 1):
+                    cumulative_advantages[t] = last_adv
+                else:
+                    cumulative_advantages[t] = last_adv * self.gamma + adv_series[t]
+                    last_adv = cumulative_advantages[t]
+            advantages.extend(cumulative_advantages.cpu().detach().tolist())
+        
+        return th.tensor(advantages).to(raw_advantages[0].device)
+
+
     def _policy_loss(
         self, advantages, log_policy, old_log_policy, actions, clip_range=None
     ):
@@ -404,6 +422,8 @@ class CustomPPO(OnPolicyAlgorithm):
                             )
                         ]
                     ).mean()
+                
+                # use 
 
                 # kl divergence
                 # kl_loss = (
@@ -412,6 +432,7 @@ class CustomPPO(OnPolicyAlgorithm):
 
                 # normalize adv
                 advantages_ = advantages.detach().clone()
+                advantages_ = self._compute_advantages_(advantages_.split(lengths))
                 if self.advantage_normalization:
                     advantages_ = self._normalize_advantage(advantages_, policies = None)
 
@@ -584,7 +605,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     rewards - advantages
                 ).split(lengths)
                 value_loss = self._value_loss(deltas, values, last_values)
-                value_loss += (ex_adv**2).mean()
+                # value_loss += (ex_adv**2).mean()
                 # add a new loss penalty
                 self.policy.optimizer_vf.zero_grad(set_to_none=True)
                 value_loss.backward()
@@ -624,10 +645,10 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("Q_values/Q_values_min", q_values.detach().cpu().min().item())
 
         # log ex adv
-        # self.logger.record("advantage/ex_adv_mean", ex_adv.detach().cpu().mean().item())
-        # self.logger.record("advantage/ex_adv_max", ex_adv.detach().cpu().max().item())
-        # self.logger.record("advantage/ex_adv_min", ex_adv.detach().cpu().min().item())
-        # self.logger.record("advantage/ex_adv_std", ex_adv.detach().cpu().std().item())
+        self.logger.record("advantage/ex_adv_mean", ex_adv.detach().cpu().mean().item())
+        self.logger.record("advantage/ex_adv_max", ex_adv.detach().cpu().max().item())
+        self.logger.record("advantage/ex_adv_min", ex_adv.detach().cpu().min().item())
+        self.logger.record("advantage/ex_adv_std", ex_adv.detach().cpu().std().item())
 
         # 
         self.logger.record("actions/action_mean", actions.mean().item())
