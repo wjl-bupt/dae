@@ -298,6 +298,29 @@ class CustomPPO(OnPolicyAlgorithm):
 
         return loss
 
+    def _calc_q2v_(self, rews, values, lasts):
+        advantages = []
+        for tid, (rew, value, last_value) in enumerate(zip(rews, values, lasts)):
+            T = rew.shape[0]
+            discounts = self.gamma ** th.arange(T, device=rew.device)
+
+            returns = th.flip(
+                th.cumsum(
+                    th.flip(rew * discounts, dims=[0]),
+                    dim=0
+                ),
+                dims=[0]
+            ) / discounts
+
+            returns += discounts * last_value
+
+            # ===== 减 value =====
+            advantages.append(returns - value)
+
+        advantages = th.cat(advantages, dim=0)
+        return advantages
+        # return loss
+
     def _compute_advantages_(self, raw_advantages):
         advantages = []
         for adv_series in raw_advantages:
@@ -406,7 +429,12 @@ class CustomPPO(OnPolicyAlgorithm):
                     deltas = (
                         rewards - advantages
                     ).split(lengths)
+                    # rebuild value losses
+                    # deltas = rewards.split(lengths)
+                    # chunk_advantages = advantages.split(lengths)
                     value_loss = self._value_loss(deltas, values, last_values)
+                    # traj_adv = self._calc_q2v_(rewards.split(lengths), values, last_values)
+                    # value_loss = (0.5 * (traj_adv - advantages)**2).mean()
                 else:
                     advs = advantages
                     value_loss = th.cat(
@@ -418,7 +446,7 @@ class CustomPPO(OnPolicyAlgorithm):
                                 - v
                             ).square()
                             for r, a, v, l in zip(
-                                rewards.split(lengths), advs, values, last_values
+                                rewards.split(lengths), advs.split(lengths), values, last_values
                             )
                         ]
                     ).mean()

@@ -128,7 +128,10 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             self.critic_activate_func,
             
         )
+        self.n_tril = self.action_space.shape[0] * (self.action_space.shape[0] + 1) // 2
+        self.drank = 1
         self.advantage_head = nn.Linear(hidden_dim, self.action_space.shape[0])
+        self.rank_head = nn.Linear(hidden_dim, self.drank * self.action_space.shape[0])
 
         # self.value_feature_extractor = nn.Sequential(
         #     nn.Linear(self.observation_space.shape[0], 64),
@@ -168,6 +171,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 # self.adv_d : 0.1,
                 # self.adv_g : 0.1,
                 self.advantage_head: 0.1,
+                self.rank_head: 0.1,
                 # 
             }
             for module, gain in module_gains.items():
@@ -185,7 +189,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             self.modules_vf = nn.ModuleList(
                 [self.value_feature_extractor, 
                  self.value_net, self.advantage_net, 
-                 self.value_head, self.advantage_head
+                 self.value_head, self.advantage_head,
+                 self.rank_head,
             ])
             # self.lr_vf
             self.optimizer_vf = Adam(
@@ -327,7 +332,33 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         entropy = dist.entropy()
         
         # .view(-1, self.action_space.shape[0], self.action_space.shape[0])
-        hs = self.advantage_head(self.advantage_net(latent_vf))
+        # tril = self.advantage_head(self.advantage_net(latent_vf))
+        
+        # full-rank
+        # hs = th.zeros(
+        #     (actions.shape[0], self.action_space.shape[0], self.action_space.shape[0]),
+        #     device=actions.device,
+        # )
+        # indices = th.tril_indices(row=self.action_space.shape[0], col=self.action_space.shape[0])
+        # hs[:, indices[0], indices[1]] = tril
+        # hs_diag = th.diagonal(hs, dim1=1, dim2=2)
+        # # hs = hs + hs.transpose(1, 2) - th.diag_embed(th.diagonal(hs, dim1=1, dim2=2))
+        # hs = hs - th.diag_embed(hs_diag) + th.diag_embed(nn.functional.softplus(hs_diag))
+        # hs = hs @ hs.transpose(-1, -2)
+        
+        # low-rank
+        diag = self.advantage_head(self.advantage_net(latent_vf))
+        diag = nn.functional.softplus(diag)
+        D = th.diag_embed(diag)  # (B, action_dim, action_dim)
+        
+        ranks = self.rank_head(self.advantage_net(latent_vf)).view(
+            -1, self.action_space.shape[0], self.drank)
+        ranks2 =  ranks @ ranks.transpose(-1, -2)  # (B, action_dim, action_dim)
+        
+        hs = D + ranks2  # (B, action_dim, action_dim)
+        
+        
+        
         # 只保证对称（不保证正定）
         # hs = 0.5 * (hs + hs.transpose(1, 2))
 
@@ -335,28 +366,37 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # hs = th.tril(hs.view(-1, self.action_space.shape[0], self.action_space.shape[0]))
         # diag = th.diagonal(hs, dim1=1, dim2=2)
         # hs = hs - th.diag_embed(diag) + th.diag_embed(nn.functional.softplus(diag))
-
         # # tanh_mu = nn.functional.tanh(mu / th.sqrt(1 + (th.pi * log_std.exp().pow(2) / 8)))
 
         var = th.exp(2 * log_std)
         delta = (actions - mu).unsqueeze(-1)  # (B, action_dim, 1)
-        delta = delta.squeeze(-1)
-        raw_advantages =  -0.5 * (hs * delta.pow(2)).sum(dim=1)
-        ex_adv = -0.5 * (hs * var).sum(dim=1)
-
-
-        # raw_advantages = - 0.5 * th.matmul(
-        #     delta.transpose(1, 2),
-        #     th.matmul(hs @ hs.transpose(1, 2), delta)
-        # ).squeeze(-1).squeeze(-1)
         
+        # diag implement
+        # delta = delta.squeeze(-1)
+        # raw_advantages =  -0.5 * (hs * delta.pow(2)).sum(dim=1)
+        # ex_adv = -0.5 * (hs * var).sum(dim=1)
+
+
+        raw_advantages = - 0.5 * th.matmul(
+            delta.transpose(1, 2),
+            th.matmul(hs @ hs.transpose(1, 2), delta)
+        ).squeeze(-1).squeeze(-1)
         # # E[A(s,a)]
         # # var = (1 - tanh_mu.pow(2)) / (1 + (2 / th.sqrt(1 + (th.pi * var / 4))))
         # ex_adv = - 0.5 * th.sum(
         #     th.diagonal(hs, dim1=1, dim2=2) * var,
         #     dim=1
         # )
-        # ex_adv = th.einsum("bij,bij->b", hs, var)
+        ex_adv = -0.5 * th.sum(
+            var.view(1, self.action_space.shape[0], 1)* hs.pow(2),
+            dim=(1, 2)
+        )
+        # sigma = th.diag_embed(var)
+        # M = hs @ hs.transpose(1, 2)  
+        # ex_adv = -0.5 * th.einsum(
+            #  "bij,bij->b", M, Sigma
+        # )
+        
         
         advantages = raw_advantages - ex_adv
 
