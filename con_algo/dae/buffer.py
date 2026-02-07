@@ -227,7 +227,7 @@ class CustomBuffer(BaseBuffer):
             _mu = self.mu[start:end]
             _noise = self.noises[start:end]
             with th.no_grad():
-                _, adv, _ = policy.predict_value(_obs, _act, _mu, log_std, _noise)
+                _, adv, _, _ = policy.predict_value(_obs, _act, _mu, log_std, _noise)
             lens = len(adv)
             # last_advlam = adv[-1]
             for t in range(lens-2, -1, -1):

@@ -281,6 +281,8 @@ class CustomPPO(OnPolicyAlgorithm):
         
 
     def _normalize_advantage(self, advantages, policies, eps=1e-8):
+        
+        return advantages / (advantages.std() + eps)
 
         return (advantages - advantages.mean() ) / (advantages.std() + eps)
 
@@ -291,7 +293,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     self.discount_matrix[: len(d), : len(d)].matmul(d)
                     + l * self.discount_vector[-len(d) :]
                     - v
-                ).square()
+                ).square().sum().unsqueeze(-1)
                 for d, v, l in zip(deltas, values, lasts)
             ]
         ).mean()
@@ -421,6 +423,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     log_policies,
                     entropy,
                     ex_adv,
+                    stdA,
                 ) = self.policy.evaluate_state(data.observations, actions, mu, log_std, noises)
 
                 # value loss
@@ -460,7 +463,9 @@ class CustomPPO(OnPolicyAlgorithm):
 
                 # normalize adv
                 advantages_ = advantages.detach().clone()
-                advantages_ = self._compute_advantages_(advantages_.split(lengths))
+                # if self.advantage_normalization:
+                #     advantages_ = advantages_ / (stdA + 1e-8)
+                # advantages_ = self._compute_advantages_(advantages_.split(lengths))
                 if self.advantage_normalization:
                     advantages_ = self._normalize_advantage(advantages_, policies = None)
 
@@ -624,7 +629,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 last_values = data.last_values
                 lengths = data.lengths
 
-                values, advantages, ex_adv = self.policy.predict_value(
+                values, advantages, ex_adv, _ = self.policy.predict_value(
                     data.observations, actions, mu, self.policy.log_std.detach(), noise = data.noises
                 )
                 # value loss
