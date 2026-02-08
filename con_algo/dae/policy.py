@@ -90,8 +90,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         #     nn.Tanh(),
         # )
 
-        self.actor_activate_func = nn.Tanh()
-        self.critic_activate_func = nn.Tanh()
+        self.actor_activate_func = nn.ReLU()
+        self.critic_activate_func = nn.ReLU()
 
         hidden_dim = 256
         self.actor_feature_extractor = SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2, hidden_dim = hidden_dim, activation = self.actor_activate_func)
@@ -159,9 +159,9 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 # self.features_extractor: np.sqrt(2),
                 # self.mlp_extractor: np.sqrt(2),
 
-                # self.actor_feature_extractor : np.sqrt(2),
-                # self.value_feature_extractor : np.sqrt(2),
-                # self.advantage_feature_extractor: np.sqrt(2),
+                self.actor_feature_extractor : np.sqrt(2),
+                self.value_feature_extractor : np.sqrt(2),
+                self.advantage_feature_extractor: np.sqrt(2),
                 self.action_head: 0.01,
                 self.value_head: 1.0,
                 # self.adv_d : 0.1,
@@ -214,7 +214,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             actions = mean_actions
         else:
             dist = self.action_dist.proba_distribution(mean_actions, log_std)
-            actions = dist.sample()          
+            actions = dist.sample()
         
         return actions
 
@@ -332,10 +332,10 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         adv_latent_a = self.advantage_net(self.advantage_feature_extractor(th.concat([latent_vf, actions], dim = -1)))
         f_a = self.advantage_head(adv_latent_a)
 
-        with th.no_grad():
-            anchor_actions = mu
-            adv_latent_mu = self.advantage_net(self.advantage_feature_extractor(th.concat([latent_vf, anchor_actions], dim = -1)))
-            f_anchor = self.advantage_head(adv_latent_mu)
+        # with th.no_grad():
+        anchor_actions = mu
+        adv_latent_mu = self.advantage_net(self.advantage_feature_extractor(th.concat([latent_vf, anchor_actions], dim = -1)))
+        f_anchor = self.advantage_head(adv_latent_mu)
     
         
         # f_zero + self.calc_jacrevian_diag(latent_vf, zero_anchor, sigma) + self.calc_hessian_diag(latent_vf, zero_anchor, sigma)
@@ -347,10 +347,10 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # tanh_sigma = th.clamp(tanh_sigma, min = 0)
         # trace = self.calc_jacrevian_diag(latent_vf, zero_anchor = th.zeros_like(mu),  mu=mu)
         # trace = self.calc_hessian_diag(latent_vf, anchor_actions, sigma)
-        trace = th.zeros_like(f_anchor)
+        trace = self.calc_hessian_diag(latent_vf, anchor_actions, sigma)
 
-        ex_adv =  f_anchor 
-        advantages = f_a - self.ema_ex_adv
+        ex_adv =  f_anchor + trace
+        advantages = f_a - ex_adv
         advantages = advantages.squeeze(-1)
 
         values = self.value_head(latent_vf)

@@ -340,6 +340,24 @@ class CustomPPO(OnPolicyAlgorithm):
 
         return loss, ratio
 
+    def _compute_advantages_(self, raw_advantages):
+        advantages = []
+        for adv_series in raw_advantages:
+            lens = len(adv_series)
+            cumulative_advantages = th.zeros_like(adv_series)
+            # cumulative_advantages[-1] = raw_advantages[-1]
+            last_adv = adv_series[-1]
+            for t in range(lens - 1, -1, -1):
+                if t == (lens - 1):
+                    cumulative_advantages[t] = last_adv
+                else:
+                    cumulative_advantages[t] = last_adv * self.gamma + adv_series[t]
+                    last_adv = cumulative_advantages[t]
+            advantages.extend(cumulative_advantages.cpu().detach().tolist())
+        
+        return th.tensor(advantages).to(raw_advantages[0].device)
+
+
     def _train_shared(self) -> None:
 
         # Update optimizer learning rate
@@ -414,6 +432,7 @@ class CustomPPO(OnPolicyAlgorithm):
 
                 # normalize adv
                 advantages_ = advantages.detach().clone()
+                # advantages_ = self._compute_advantages_(advantages_.split(lengths))
                 if self.advantage_normalization:
                     advantages_ = self._normalize_advantage(advantages_, policies = None)
 
