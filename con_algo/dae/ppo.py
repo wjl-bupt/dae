@@ -293,7 +293,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     self.discount_matrix[: len(d), : len(d)].matmul(d)
                     + l * self.discount_vector[-len(d) :]
                     - v
-                ).square().sum().unsqueeze(-1)
+                ).square()
                 for d, v, l in zip(deltas, values, lasts)
             ]
         ).mean()
@@ -423,7 +423,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     log_policies,
                     entropy,
                     ex_adv,
-                    stdA,
+                    hs_diagonal,
                 ) = self.policy.evaluate_state(data.observations, actions, mu, log_std, noises)
 
                 # value loss
@@ -577,6 +577,10 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("advantage/ex_adv_min", ex_adv.detach().cpu().min().item())
         self.logger.record("advantage/ex_adv_std", ex_adv.detach().cpu().std().item())
 
+
+        self.logger.record("hs/diagonal_mean", hs_diagonal.detach().cpu().mean().item())
+        self.logger.record("hs/diagonal_max", hs_diagonal.detach().cpu().max().item())
+        self.logger.record("hs/diagonal_min", hs_diagonal.detach().cpu().min().item())
         # log raw adv
         # raw_advantages = advantages + ex_adv
         # self.logger.record("advantage/raw_advantage_mean", raw_advantages.detach().cpu().mean().item())

@@ -271,10 +271,10 @@ if __name__ == "__main__":
         hparam["policy_kwargs"] = policy_kwargs
         
         if logdir is not None:
-            checkpoints_callback = PeriodicCheckpointCallback(save_freq=1_000_000, save_path=logdir)
+            #checkpoints_callback = PeriodicCheckpointCallback(save_freq=1_000_000, save_path=logdir)
             eval_env = get_env(_env, envs=1, args=args, logdir=logdir)[0]
             # eval_callback = EvalCallback(eval_env=eval_env, n_eval_episodes=16, eval_freq=200_000)
-            callbacks_list.append(checkpoints_callback)
+            # callbacks_list.append(checkpoints_callback)
             # callbacks_list.append(eval_callback)
         else:
             checkpoints_callback = None

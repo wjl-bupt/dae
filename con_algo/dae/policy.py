@@ -91,17 +91,17 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # )
 
         self.actor_activate_func = nn.Tanh()
-        self.critic_activate_func = nn.ReLU()
+        self.critic_activate_func = nn.Tanh()
 
         hidden_dim = 256
         self.actor_feature_extractor = SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2, hidden_dim = hidden_dim, activation = self.actor_activate_func)
         self.action_net = nn.Sequential(
-            nn.Linear(hidden_dim, 64),
+            nn.Linear(hidden_dim, hidden_dim),
             self.actor_activate_func,
-            nn.Linear(64, 64),
+            nn.Linear(hidden_dim, hidden_dim),
             self.actor_activate_func,
         )
-        self.action_head = nn.Linear(64, self.action_space.shape[0])
+        self.action_head = nn.Linear(hidden_dim, self.action_space.shape[0])
 
         # self.action_net = nn.Linear(64, self.action_space.shape[0])
         self.log_std = nn.Parameter(th.zeros(self.action_space.shape[0]))
@@ -122,7 +122,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         #     activation=self.critic_activate_func
         # )
         self.advantage_net = nn.Sequential(
-            # SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2, hidden_dim = hidden_dim, activation = self.critic_activate_func),
+            SimBaEncoder(input_dim = hidden_dim, block_num = 2, hidden_dim = hidden_dim, activation = self.critic_activate_func),
             # self.critic_activate_func,
             nn.Linear(hidden_dim, hidden_dim),
             self.critic_activate_func,
@@ -133,6 +133,12 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         self.n_tril = self.action_space.shape[0] * (self.action_space.shape[0] + 1) // 2
         self.drank = 1
         self.advantage_head = nn.Linear(hidden_dim, self.n_tril)
+
+        tril_rows, tril_cols = th.tril_indices(self.action_space.shape[0], self.action_space.shape[0], 0)
+        self.register_buffer("tril_rows", tril_rows)
+        self.register_buffer("tril_cols", tril_cols)
+        self.register_buffer("diag_mask", tril_rows == tril_cols)
+
         # self.rank_head = nn.Linear(hidden_dim, self.drank * self.action_space.shape[0])
 
         # self.value_feature_extractor = nn.Sequential(
@@ -168,7 +174,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 self.actor_feature_extractor : np.sqrt(2),
                 self.value_feature_extractor : np.sqrt(2),
                 self.advantage_net : np.sqrt(2),
-                self.action_net: np.sqrt(2),
+                # self.action_net: np.sqrt(2),
                 # self.advantage_feature_extractor: np.sqrt(2),
                 self.action_head: 0.01,
                 self.value_head: 1.0,
@@ -338,82 +344,39 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # .view(-1, self.action_space.shape[0], self.action_space.shape[0])
         tril = self.advantage_head(self.advantage_net(latent_vf))
         
-        # full-rank
-        hs = th.zeros(
-            (actions.shape[0], self.action_space.shape[0], self.action_space.shape[0]),
-            device=actions.device,
-        )
-        indices = th.tril_indices(row=self.action_space.shape[0], col=self.action_space.shape[0])
-        hs[:, indices[0], indices[1]] = tril
-        hs_diag = th.diagonal(hs, dim1=1, dim2=2)
-        # hs = hs + hs.transpose(1, 2) - th.diag_embed(th.diagonal(hs, dim1=1, dim2=2))
-        hs = hs - th.diag_embed(hs_diag) + th.diag_embed(nn.functional.softplus(hs_diag))
-        hs = hs @ hs.transpose(-1, -2)
-        
-        # low-rank
-        # diag = self.advantage_head(self.advantage_net(latent_vf))
-        # diag = nn.functional.softplus(diag)
-        # D = th.diag_embed(diag)  # (B, action_dim, action_dim)
-        # hs = D
-        # ranks = self.rank_head(self.advantage_net(latent_vf)).view(
-        #     -1, self.action_space.shape[0], self.drank)
-        # ranks2 =  ranks @ ranks.transpose(-1, -2)  # (B, action_dim, action_dim)
-        
-        # hs = D + ranks2  # (B, action_dim, action_dim)
-        
-        
-        
-        # 只保证对称（不保证正定）
-        # hs = 0.5 * (hs + hs.transpose(1, 2))
+        L = th.zeros(mu.size(0), self.action_space.shape[0], self.action_space.shape[0], device=mu.device)
+        L[:, self.tril_rows, self.tril_cols] = tril
+        # exp diag
+        L[:, self.tril_rows[self.diag_mask], self.tril_cols[self.diag_mask]] = \
+            nn.functional.softplus(L[:, self.tril_rows[self.diag_mask], self.tril_cols[self.diag_mask]])
 
-        # 保证正定 + 对称
-        # hs = th.tril(hs.view(-1, self.action_space.shape[0], self.action_space.shape[0]))
-        # diag = th.diagonal(hs, dim1=1, dim2=2)
-        # hs = hs - th.diag_embed(diag) + th.diag_embed(nn.functional.softplus(diag))
-        # # tanh_mu = nn.functional.tanh(mu / th.sqrt(1 + (th.pi * log_std.exp().pow(2) / 8)))
+        u_mu = (actions - mean_actions.detach()).unsqueeze(2)          # (B, A, 1)
+        y = th.bmm(L.transpose(1, 2), u_mu)    # (B, A, 1)
+        raw_advantages = -0.5 * (y.squeeze(2) ** 2).sum(dim=1, keepdim=True)
 
-        var = th.exp(2 * log_std)
-        delta = (actions - mu).unsqueeze(-1)  # (B, action_dim, 1)
-        
-        # diag implement
-        # delta = delta.squeeze(-1)
-        # raw_advantages =  -0.5 * (hs * delta.pow(2)).sum(dim=1)
-        # ex_adv = -0.5 * (hs * var).sum(dim=1)
+        var = th.exp(2 * new_log_std.exp())
+        # delta = (actions - mu).unsqueeze(-1)  # (B, action_dim, 1)
 
-
-        raw_advantages = - 0.5 * th.matmul(
-            delta.transpose(1, 2),
-            th.matmul(hs @ hs.transpose(1, 2), delta)
-        ).squeeze(-1).squeeze(-1)
-        # # E[A(s,a)]
         # # var = (1 - tanh_mu.pow(2)) / (1 + (2 / th.sqrt(1 + (th.pi * var / 4))))
-        # ex_adv = - 0.5 * th.sum(
-        #     th.diagonal(hs, dim1=1, dim2=2) * var,
-        #     dim=1
-        # )
-        ex_adv = -0.5 * th.sum(
-            var.view(1, self.action_space.shape[0], 1)* hs.pow(2),
-            dim=(1, 2)
-        )
+        P_diag = (L ** 2).sum(dim=2)           # (B, A)
+        ex_adv = -0.5 * (P_diag * var).sum(dim=1, keepdim=True)
         # sigma = th.diag_embed(var)
         # M = hs @ hs.transpose(1, 2)  
         # ex_adv = -0.5 * th.einsum(
             #  "bij,bij->b", M, Sigma
         # )
         varA = 0.5 * th.sum(
-            hs.pow(2) * (var.view(1, self.action_space.shape[0], 1) * var.view(1, 1, self.action_space.shape[0])),
+            L.pow(2) * (var.view(1, self.action_space.shape[0], 1) * var.view(1, 1, self.action_space.shape[0])),
             dim=(1, 2)
         )
         stdA = th.sqrt(varA + epsilon).detach()
-        
-        
-        
-        
         advantages = raw_advantages - ex_adv
-
+        advantages = advantages.squeeze(-1)
         values = self.value_head(latent_vf)
         
-        return values, advantages, log_policies, entropy, ex_adv, stdA
+        hs_diagonal = th.diagonal(L, dim1 = -1, dim2 = -2)
+        
+        return values, advantages, log_policies, entropy, ex_adv, hs_diagonal
         # return values, advantages, log_probs, distribution.entropy()
     
     def evaluate_state(

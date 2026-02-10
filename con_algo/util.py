@@ -59,7 +59,7 @@ class DiagGaussianDistribution:
 
     def sample(self) -> th.Tensor:
         # Reparametrization trick to pass gradients
-        return self.distribution.sample()
+        return self.distribution.rsample()
 
     def mode(self) -> th.Tensor:
         return self.distribution.mean
