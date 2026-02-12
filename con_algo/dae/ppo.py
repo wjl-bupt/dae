@@ -154,7 +154,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 "Training with seperate actor/critic is deprecated, use at your own risk"
             )
         self.dae_correction = dae_correction
-        self.gl = self.gamma * 0.90
+        self.gl = self.gamma * 0.95
         self.discount_matrix = th.tensor(
             [
                 [0 if j < i else (self.gl) ** (j - i) for j in range(n_steps)]
@@ -351,7 +351,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 if t == (lens - 1):
                     cumulative_advantages[t] = last_adv
                 else:
-                    cumulative_advantages[t] = last_adv * self.gamma + adv_series[t]
+                    cumulative_advantages[t] = last_adv * self.gl + adv_series[t]
                     last_adv = cumulative_advantages[t]
             advantages.extend(cumulative_advantages.cpu().detach().tolist())
         
@@ -524,10 +524,10 @@ class CustomPPO(OnPolicyAlgorithm):
         # add some metric to log.
         concat_values = th.concat(values, dim = -1)
         q_values = (concat_values + advantages).detach()
-        self.logger.record("advantage/advantage_mean", advantages.detach().cpu().mean().item())
-        self.logger.record("advantage/advantage_std", advantages.detach().cpu().std().item())
-        self.logger.record("advantage/advantage_max", advantages.detach().cpu().max().item())
-        self.logger.record("advantage/advantage_min", advantages.detach().cpu().min().item())
+        self.logger.record("advantage/advantage_mean", advantages_.cpu().mean().item())
+        self.logger.record("advantage/advantage_std", advantages_.cpu().std().item())
+        self.logger.record("advantage/advantage_max", advantages_.cpu().max().item())
+        self.logger.record("advantage/advantage_min", advantages_.cpu().min().item())
 
         self.logger.record("values/V_mean", concat_values.detach().cpu().mean().item())
         self.logger.record("values/V_std", concat_values.detach().cpu().std().item())

@@ -90,13 +90,13 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         #     nn.Tanh(),
         # )
 
-        self.actor_activate_func = nn.Tanh()
-        self.critic_activate_func = nn.Tanh()
+        self.actor_activate_func = nn.SiLU()
+        self.critic_activate_func = nn.SiLU()
 
         hidden_dim = 256
-        self.actor_feature_extractor = SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2, hidden_dim = hidden_dim, activation = self.actor_activate_func)
-        self.action_net = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
+        # self.actor_feature_extractor = SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2, hidden_dim = hidden_dim, activation = self.actor_activate_func)
+        self.actor_feature_extractor = nn.Sequential(
+            nn.Linear(self.observation_space.shape[0], hidden_dim),
             self.actor_activate_func,
             nn.Linear(hidden_dim, hidden_dim),
             self.actor_activate_func,
@@ -107,52 +107,32 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         self.log_std = nn.Parameter(th.zeros(self.action_space.shape[0]))
         # self.log_std = nn.Linear(64, self.action_space.shape[0])
         # self.value_net = nn.Linear(self.mlp_extractor.latent_dim_vf, 1)
-        self.value_feature_extractor = SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2, hidden_dim = hidden_dim, activation = self.critic_activate_func)
-        self.value_net = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            self.critic_activate_func,
-            nn.Linear(hidden_dim, hidden_dim),
-            self.critic_activate_func,
-        )
+
+
+        # self.value_feature_extractor = nn.Sequential(
+        #     nn.Linear(self.observation_space.shape[0], hidden_dim),
+        #     # nn.LayerNorm(hidden_dim),
+        #     self.critic_activate_func,
+        #     nn.Linear(hidden_dim, hidden_dim),
+        #     #nn.LayerNorm(hidden_dim),
+        #     self.critic_activate_func,
+        # )
         self.value_head = nn.Linear(hidden_dim, 1)
-        self.advantage_feature_extractor = SimBaEncoder(
-            input_dim = hidden_dim + self.action_space.shape[0], 
-            block_num = 2, 
-            hidden_dim = hidden_dim, 
-            activation=self.critic_activate_func
-        )
-        self.advantage_net = nn.Sequential(
-            # SimBaEncoder(
-            #     input_dim = hidden_dim + self.action_space.shape[0], 
-            #     block_num = 2, 
-            #     hidden_dim = hidden_dim, 
-            #     activation=self.critic_activate_func
-            # ),  
+        self.advantage_feature_extractor = nn.Sequential(
+            nn.Linear(hidden_dim + hidden_dim, hidden_dim),
+            # nn.LayerNorm(hidden_dim),
+            self.critic_activate_func,
             nn.Linear(hidden_dim, hidden_dim),
+            # nn.LayerNorm(hidden_dim),
+            self.critic_activate_func,
+        )
+        self.action_encoder = nn.Sequential(
+            nn.Linear(self.action_space.shape[0], hidden_dim),
             self.critic_activate_func,
             nn.Linear(hidden_dim, hidden_dim),
             self.critic_activate_func,
         )
         self.advantage_head = nn.Linear(hidden_dim, 1)
-
-        # self.value_feature_extractor = nn.Sequential(
-        #     nn.Linear(self.observation_space.shape[0], 64),
-        #     nn.LayerNorm(64),
-        #     nn.GELU(approximate="tanh"),
-        #     nn.Linear(64, 64),
-        #     nn.LayerNorm(64),
-        #     nn.GELU(approximate="tanh"),
-        # )
-        # self.value_net = nn.Linear(64, 1)
-        # self.advantage_feature_extractor = nn.Sequential(
-        #     nn.Linear(64 + self.action_space.shape[0], 64),
-        #     nn.LayerNorm(64),
-        #     nn.GELU(approximate="tanh"),
-        #     nn.Linear(64, 64),
-        #     nn.LayerNorm(64),
-        #     nn.GELU(approximate="tanh"),
-        # )
-
 
         # Init weights: use orthogonal initialization
         # with small initial weight for the output
@@ -189,8 +169,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             )
             self.modules_vf = nn.ModuleList(
                 [self.value_feature_extractor, self.advantage_feature_extractor, 
-                 self.value_net, self.advantage_net, 
-                 self.value_head, self.advantage_head
+                 # self.value_net, self.advantage_net, 
+                 self.value_head, self.advantage_head,
             ])
             # self.lr_vf
             self.optimizer_vf = Adam(
@@ -206,9 +186,9 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # feature = self.features_extractor(obs)
         # latent_pi, latent_vf = self.mlp_extractor(feature)
 
-        latent_pi = self.action_net(self.actor_feature_extractor(obs))
-        latent_vf = self.value_net(self.value_feature_extractor(obs))
-        return latent_pi, latent_vf
+        latent_pi = self.actor_feature_extractor(obs)
+        # latent_vf = self.value_feature_extractor(obs)
+        return latent_pi, None
     
     def _predict(self, obs: th.Tensor, deterministic: bool = False) -> th.Tensor:
         
@@ -243,7 +223,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         :return: action, value and log probability of the action
         """
         obs = obs.float()
-        latent_pi, latent_vf = self._extract_latent(obs)
+        latent_pi, _ = self._extract_latent(obs)
         mean_actions, log_std = self.calc_meam_std(latent_pi)
 
         dist = self.action_dist.proba_distribution(mean_actions, log_std)
@@ -256,7 +236,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # log_policies -= th.log(1 - actions_w_tanh.pow(2) + 1e-8)
         # log_policies = log_policies.sum(-1)
             
-        values = self.value_head(latent_vf)
+        values = self.value_head(latent_pi)
 
         return actions, mean_actions, log_policies, values, actions
 
@@ -270,7 +250,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
 
         def f_action(a):
             return self.advantage_head(
-                self.advantage_net(self.advantage_feature_extractor(th.cat([latent_b, a], dim=-1)))
+                self.advantage_feature_extractor(th.cat([latent_b, self.action_encoder(a)], dim=-1))
             ).squeeze(-1)
 
         # g(a) = ∇_a f(a)
@@ -283,7 +263,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
 
     def jacobian_single(self, latent_b, action_b):
         return self.advantage_head(
-            self.advantage_net(self.advantage_feature_extractor(th.cat([latent_b, action_b], dim=-1)))
+            self.advantage_feature_extractor(th.cat([latent_b, self.action_encoder(action_b)], dim=-1))
         ).squeeze(-1)
 
 
@@ -305,7 +285,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             zero_anchor,
         ).unsqueeze(-1)
         jacrevian = 0.5 * th.mean(
-            jacrevian_diag * mu,
+            jacrevian_diag * (mu - zero_anchor),
             dim=-1, keepdim = True,
         )
         
@@ -320,7 +300,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         
         
         obs = obs.float()
-        latent_pi, latent_vf = self._extract_latent(obs)
+        latent_pi, _ = self._extract_latent(obs)
         mean_actions = self.action_head(latent_pi)
         new_log_std = self.log_std
         
@@ -335,12 +315,15 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # clamp_actions = th.clamp(actions, self.action_space.low.mean().item(), self.action_space.high.mean().item())
         # tanh_mu = nn.functional.tanh(mu / th.sqrt(1 + (th.pi * log_std.exp().pow(2) / 8)))
         # tanh_action = nn.functional.tanh(actions)
-        adv_latent_a = self.advantage_net(self.advantage_feature_extractor(th.concat([latent_vf, actions], dim = -1)))
+        action_embeddings = self.action_encoder(actions)
+        mu_embeddings = self.action_encoder(mu)
+        
+        adv_latent_a = self.advantage_feature_extractor(th.concat([latent_pi, action_embeddings], dim = -1))
         f_a = self.advantage_head(adv_latent_a)
 
         # with th.no_grad():
         anchor_actions = mu
-        adv_latent_mu = self.advantage_net(self.advantage_feature_extractor(th.concat([latent_vf, anchor_actions], dim = -1)))
+        adv_latent_mu = self.advantage_feature_extractor(th.concat([latent_pi, mu_embeddings], dim = -1))
         f_anchor = self.advantage_head(adv_latent_mu)
     
         
@@ -351,17 +334,18 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # tanh_sigma = 1 - 2 / th.sqrt(1 + (th.pi * sigma.pow(2) / 4)) * th.exp(-(mu.pow(2)/ (1 + (th.pi * sigma.pow(2) / 4)))) - tanh_mu.pow(2)
         # tanh_sigma = (1 - tanh_mu.pow(2)) / (1 + (2 / th.sqrt(1 + (th.pi * sigma / 4))))
         # tanh_sigma = th.clamp(tanh_sigma, min = 0)
-        # trace = self.calc_jacrevian_diag(latent_vf, zero_anchor = th.zeros_like(mu),  mu=mu)
+        # trace = self.calc_jacrevian_diag(latent_pi, zero_anchor = mu,  mu=mu)
+        trace = self.calc_hessian_diag(latent_pi, mu, sigma)
+        
         # trace = self.calc_hessian_diag(latent_vf, anchor_actions, sigma)
-        trace = self.calc_hessian_diag(latent_vf, anchor_actions, sigma)
 
         ex_adv =  f_anchor + trace
         advantages = f_a - ex_adv
         advantages = advantages.squeeze(-1)
 
-        values = self.value_head(latent_vf)
+        values = self.value_head(latent_pi)
         
-        return values, advantages, log_policies, entropy, ex_adv.squeeze(-1), trace.squeeze(-1)
+        return values, advantages, log_policies, entropy, ex_adv.squeeze(-1), f_anchor.squeeze(-1)
         # return values, advantages, log_probs, distribution.entropy()
     
     def evaluate_state(
@@ -396,10 +380,11 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
     ) -> Tuple[th.Tensor, th.Tensor]:
         obs = obs.float()
         # latent = self.extract_features(obs)
-        _, latent_vf = self._extract_latent(obs)
+        
 
         if actions is None:
             advantages = None
+            latent_vf, _ = self._extract_latent(obs)
             values = self.value_head(latent_vf)
             return values, advantages
         else:
