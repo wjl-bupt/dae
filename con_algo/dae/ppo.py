@@ -154,16 +154,17 @@ class CustomPPO(OnPolicyAlgorithm):
                 "Training with seperate actor/critic is deprecated, use at your own risk"
             )
         self.dae_correction = dae_correction
-
+        # NOTE(junweiluo): lambda is not used in the current implementation
+        self.gl = self.gamma * 0.9
         self.discount_matrix = th.tensor(
             [
-                [0 if j < i else self.gamma ** (j - i) for j in range(n_steps)]
+                [0 if j < i else self.gl ** (j - i) for j in range(n_steps)]
                 for i in range(n_steps)
             ],
             dtype=th.float32,
             device=self.device,
         )
-        self.discount_vector = gamma ** th.arange(
+        self.discount_vector = self.gl ** th.arange(
             n_steps, 0, -1, dtype=th.float32, device=self.device
         )
 
@@ -334,7 +335,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 if t == (lens - 1):
                     cumulative_advantages[t] = last_adv
                 else:
-                    cumulative_advantages[t] = last_adv * self.gamma + adv_series[t]
+                    cumulative_advantages[t] = last_adv * self.gl + adv_series[t]
                     last_adv = cumulative_advantages[t]
             advantages.extend(cumulative_advantages.cpu().detach().tolist())
         
@@ -465,7 +466,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 advantages_ = advantages.detach().clone()
                 # if self.advantage_normalization:
                 #     advantages_ = advantages_ / (stdA + 1e-8)
-                # advantages_ = self._compute_advantages_(advantages_.split(lengths))
+                advantages_ = self._compute_advantages_(advantages_.split(lengths))
                 if self.advantage_normalization:
                     advantages_ = self._normalize_advantage(advantages_, policies = None)
 
