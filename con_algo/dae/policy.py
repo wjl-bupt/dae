@@ -90,18 +90,18 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         #     nn.Tanh(),
         # )
 
-        self.actor_activate_func = nn.ReLU()
-        self.critic_activate_func = nn.ReLU()
+        self.actor_activate_func = nn.Tanh()
+        self.critic_activate_func = nn.Tanh()
 
         hidden_dim = 256
         self.actor_feature_extractor = SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2, hidden_dim = hidden_dim, activation = self.actor_activate_func)
         self.action_net = nn.Sequential(
-            nn.Linear(hidden_dim, 64),
+            nn.Linear(hidden_dim, hidden_dim),
             self.actor_activate_func,
-            nn.Linear(64, 64),
+            nn.Linear(hidden_dim, hidden_dim),
             self.actor_activate_func,
         )
-        self.action_head = nn.Linear(64, self.action_space.shape[0])
+        self.action_head = nn.Linear(hidden_dim, self.action_space.shape[0])
 
         # self.action_net = nn.Linear(64, self.action_space.shape[0])
         self.log_std = nn.Parameter(th.zeros(self.action_space.shape[0]))
@@ -122,6 +122,12 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             activation=self.critic_activate_func
         )
         self.advantage_net = nn.Sequential(
+            # SimBaEncoder(
+            #     input_dim = hidden_dim + self.action_space.shape[0], 
+            #     block_num = 2, 
+            #     hidden_dim = hidden_dim, 
+            #     activation=self.critic_activate_func
+            # ),  
             nn.Linear(hidden_dim, hidden_dim),
             self.critic_activate_func,
             nn.Linear(hidden_dim, hidden_dim),
@@ -159,9 +165,9 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 # self.features_extractor: np.sqrt(2),
                 # self.mlp_extractor: np.sqrt(2),
 
-                self.actor_feature_extractor : np.sqrt(2),
-                self.value_feature_extractor : np.sqrt(2),
-                self.advantage_feature_extractor: np.sqrt(2),
+                # self.actor_feature_extractor : np.sqrt(2),
+                # self.value_feature_extractor : np.sqrt(2),
+                # self.advantage_feature_extractor: np.sqrt(2),
                 self.action_head: 0.01,
                 self.value_head: 1.0,
                 # self.adv_d : 0.1,

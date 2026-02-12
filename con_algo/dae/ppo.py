@@ -154,16 +154,16 @@ class CustomPPO(OnPolicyAlgorithm):
                 "Training with seperate actor/critic is deprecated, use at your own risk"
             )
         self.dae_correction = dae_correction
-
+        self.gl = self.gamma * 0.90
         self.discount_matrix = th.tensor(
             [
-                [0 if j < i else self.gamma ** (j - i) for j in range(n_steps)]
+                [0 if j < i else (self.gl) ** (j - i) for j in range(n_steps)]
                 for i in range(n_steps)
             ],
             dtype=th.float32,
             device=self.device,
         )
-        self.discount_vector = gamma ** th.arange(
+        self.discount_vector = self.gl ** th.arange(
             n_steps, 0, -1, dtype=th.float32, device=self.device
         )
 
@@ -404,13 +404,14 @@ class CustomPPO(OnPolicyAlgorithm):
 
                 # value loss
                 values = values.flatten().split(lengths)
+                # dae_correction = False
                 if self.dae_correction:
                     deltas = (
                         rewards - advantages
                     ).split(lengths)
                     value_loss = self._value_loss(deltas, values, last_values)
                 else:
-                    advs = advantages
+                    advs = advantages.split(lengths)
                     value_loss = th.cat(
                         [
                             (
@@ -556,9 +557,9 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("actions/action_max", actions.max().item())
         self.logger.record("actions/action_min", actions.min().item())
 
-        self.logger.record("actions/mu_mean", mu.mean().item())
-        self.logger.record("actions/mu_max", mu.max().item())
-        self.logger.record("actions/mu_min", mu.min().item())
+        self.logger.record("actions/mu_mean", self.rollout_buffer.mu.mean().item())
+        self.logger.record("actions/mu_max", self.rollout_buffer.mu.max().item())
+        self.logger.record("actions/mu_min", self.rollout_buffer.mu.min().item())
         
         self.logger.record("rewards/reward_mean", self.rollout_buffer.rewards.mean().item())
         self.logger.record("rewards/reward_max", self.rollout_buffer.rewards.mean().item())

@@ -16,5 +16,5 @@ learning_rate:
 n_epochs: 6
 n_epochs_vf: 6
 n_steps: 2
-shared: false
+shared: true
 nenvs: 4
