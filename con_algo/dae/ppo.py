@@ -154,7 +154,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 "Training with seperate actor/critic is deprecated, use at your own risk"
             )
         self.dae_correction = dae_correction
-        self.gl = self.gamma * 0.90
+        self.gl = self.gamma * 0.95
         self.discount_matrix = th.tensor(
             [
                 [0 if j < i else (self.gl) ** (j - i) for j in range(n_steps)]

@@ -69,7 +69,10 @@ class DiagGaussianDistribution:
         self.proba_distribution(mean_actions, log_std)
         return self.get_actions(deterministic=deterministic)
 
-
+def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
+    th.nn.init.orthogonal_(layer.weight, std)
+    th.nn.init.constant_(layer.bias, bias_const)
+    return layer
 
 class PeriodicCheckpointCallback(BaseCallback):
     def __init__(self, save_freq: int, save_path: str, verbose=0):
