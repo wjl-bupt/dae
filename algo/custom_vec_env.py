@@ -189,6 +189,10 @@ class CustomVecEnv(VecEnv):
         for remote, rel_idx in targets:
             remote.send(("get_attr", attr_name))
             vals = remote.recv()
+            # NOTE(junweiluo): 这里假设所有环境的属性值相同，如果不相同需要修改代码以支持返回不同的值
+            # 对齐较新版本的SB3
+            if not isinstance(vals, (list, tuple)):
+                vals = [vals] * len(rel_idx)
             for idx, val in zip(rel_idx, vals):
                 results[idx] = val
         return results

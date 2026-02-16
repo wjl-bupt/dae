@@ -4,6 +4,7 @@ import torch.nn as nn
 import os
 import numpy as np
 from time import time   
+from torch.func import vmap, hessian, functional_call, jacrev, grad
 from stable_baselines3.common.callbacks import BaseCallback
 from torch.distributions import Normal
 from typing import Optional, TypeVar
@@ -59,7 +60,7 @@ class DiagGaussianDistribution:
 
     def sample(self) -> th.Tensor:
         # Reparametrization trick to pass gradients
-        return self.distribution.sample()
+        return self.distribution.rsample()
 
     def mode(self) -> th.Tensor:
         return self.distribution.mean
@@ -69,7 +70,128 @@ class DiagGaussianDistribution:
         self.proba_distribution(mean_actions, log_std)
         return self.get_actions(deterministic=deterministic)
 
+def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
+    th.nn.init.orthogonal_(layer.weight, std)
+    th.nn.init.constant_(layer.bias, bias_const)
+    return layer
 
+class Actor(nn.Module):
+    def __init__(self, action_dim, hidden_dim = 256, activate_func = nn.SiLU()):
+        super().__init__()
+        self.actor_activate_func = activate_func
+        self.observation_feature_extractor = nn.Sequential(
+            layer_init(nn.Linear(self.observation_space.shape[0], hidden_dim)),
+            self.actor_activate_func,
+            layer_init(nn.Linear(hidden_dim, hidden_dim)),
+            self.actor_activate_func,
+        )
+        self.action_net = nn.Sequential(
+            layer_init(nn.Linear(hidden_dim, action_dim), std=0.01),
+        )
+        self.log_std = nn.Parameter(th.zeros(action_dim))
+
+    def forward(self, x):
+        feature_ = self.observation_feature_extractor(x)
+        mu = self.action_net(feature_)
+        log_std = self.log_std
+        return mu, log_std
+
+class Critic(nn.Module):
+    def __init__(self, hidden_dim = 256, activate_func = nn.SiLU()):
+        super().__init__()
+        self.critic_activate_func = activate_func
+        self.observation_feature_extractor = nn.Sequential(
+            layer_init(nn.Linear(self.observation_space.shape[0], hidden_dim)),
+            self.critic_activate_func,
+            layer_init(nn.Linear(hidden_dim, hidden_dim)),
+            self.critic_activate_func,
+        )
+        self.action_feature_extractor = nn.Sequential(
+            layer_init(nn.Linear(self.action_space.shape[0], hidden_dim)),
+            self.activate_func,
+            layer_init(nn.Linear(hidden_dim, hidden_dim)),
+            self.activate_func,
+        )
+        self.value_net = nn.Sequential(
+            layer_init(nn.Linear(hidden_dim, 1), std=1.0),
+        )
+        self.advantage_net = nn.Sequential(
+            layer_init(nn.Linear(hidden_dim * 2, hidden_dim), std=np.sqrt(2)),
+            self.activate_func,
+            layer_init(nn.Linear(hidden_dim, hidden_dim), std=np.sqrt(2)),
+            self.activate_func,
+            layer_init(nn.Linear(hidden_dim, 1), std=1.0)
+        )
+
+    def hess_diag_single(self, latent_b, action_b):
+        """
+        latent_b: (latent_dim,)
+        action_b: (action_dim,)
+        return: (action_dim,)  Hessian diagonal
+        """
+
+        def f_action(a):
+            return \
+                self.advantage_net(
+                    th.cat([latent_b, self.action_feature_extractor(a)], dim=-1)
+                ).squeeze(-1)
+
+        # g(a) = ∇_a f(a)
+        grad_f = grad(f_action)
+
+        # Hessian = jacobian of grad
+        H = jacrev(grad_f)(action_b)   # (action_dim, action_dim)
+
+        return th.diagonal(H)
+
+    def jacobian_single(self, latent_b, action_b):
+        return self.advantage_net(
+            th.cat([latent_b, self.action_feature_extractor(action_b)], dim=-1)
+        ).squeeze(-1)
+
+
+    def calc_hessian_diag(self, latent_vf: th.Tensor, actions: th.Tensor, sigma : th.Tensor) -> th.Tensor:
+        hessian_diag = vmap(self.hess_diag_single)(
+            latent_vf, 
+            actions,
+        )
+        hessian = 0.5 * th.sum(
+            hessian_diag * sigma,
+            dim=-1, keepdim = True,
+        )
+        
+        return hessian
+    
+    def calc_jacrevian_diag(self, latent_vf, zero_anchor: th.Tensor, mu: th.Tensor) -> th.Tensor:
+        jacrevian_diag = vmap(self.jacobian_single)(
+            latent_vf, 
+            zero_anchor,
+        ).unsqueeze(-1)
+        jacrevian = 0.5 * th.mean(
+            jacrevian_diag * (mu - zero_anchor),
+            dim=-1, keepdim = True,
+        )
+        
+        return jacrevian
+
+
+    def forward(self, x, actions = None, mu = None, log_std = None):
+        feature_ = self.observation_feature_extractor(x)
+        if actions is not None:
+            action_feature_ = self.action_feature_extractor(actions)
+            mu_feature_ = self.action_feature_extractor(mu)
+            feature = th.cat([feature_, action_feature_], dim=-1)
+            mu_feature = th.cat([feature_, mu_feature_], dim=-1)
+            f_a = self.advantage_net(feature)
+            f_mu = self.advantage_net(mu_feature)
+            sigma = th.exp(log_std).pow(2)
+            trace = self.calc_jacrevian_diag(feature_, mu, sigma)
+            ex_adv = f_mu + trace
+            advantage = f_a - ex_adv
+        else:
+            advantage = None
+        value = self.value_net(feature_)
+        return value, advantage
 
 class PeriodicCheckpointCallback(BaseCallback):
     def __init__(self, save_freq: int, save_path: str, verbose=0):

@@ -125,6 +125,7 @@ def get_mujoco_env(e, envs, args, logdir):
         vec_env_cls=CustomVecEnv,
         vec_env_kwargs=dict(threads=args.threads),
         # wrapper_class=ClipAction,
+        # env_kwargs=dict(render_mode=None), 
     )
     # env = ClipAction(env)
     from stable_baselines3.common.vec_env import VecNormalize

@@ -154,7 +154,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 "Training with seperate actor/critic is deprecated, use at your own risk"
             )
         self.dae_correction = dae_correction
-        self.gl = self.gamma * 0.95
+        self.gl = self.gamma * 0.90
         self.discount_matrix = th.tensor(
             [
                 [0 if j < i else (self.gl) ** (j - i) for j in range(n_steps)]
@@ -606,7 +606,9 @@ class CustomPPO(OnPolicyAlgorithm):
                     rewards - advantages
                 ).split(lengths)
                 value_loss = self._value_loss(deltas, values, last_values)
+                # value_loss = self.vf_coef * value_loss + 0.1 * (1.0 / (advantages.std() + 1.0)).mean() 
                 # value_loss += (ex_adv**2).mean()
+                value_loss = value_loss + 0.5 * (ex_adv**2).mean()
                 # add a new loss penalty
                 self.policy.optimizer_vf.zero_grad(set_to_none=True)
                 value_loss.backward()
@@ -729,11 +731,10 @@ class CustomPPO(OnPolicyAlgorithm):
                 entropy_losses.append(entropy_loss.item())
                 kl_divs.append(kl_div.item())
 
-            if kl_div >= 0.05:
-                break
+            # if kl_div >= 0.05:
+            #     break
 
         self._n_updates += self.n_epochs
-
         # Logs
         self.logger.record("train/clip_range", clip_range)
         self.logger.record("train/clip_fraction", np.mean(clip_fractions))
