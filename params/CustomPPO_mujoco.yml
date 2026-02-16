@@ -1,6 +1,6 @@
 advantage_normalization: true
-batch_size: 4096
-batch_size_vf: 4096
+batch_size: 256
+batch_size_vf: 256
 clip_range:
     init: 0.20
     final: 0.10
@@ -15,6 +15,6 @@ learning_rate:
     ftype: "linear"
 n_epochs: 6
 n_epochs_vf: 6
-n_steps: 256
+n_steps: 64
 shared: false
 nenvs: 32
