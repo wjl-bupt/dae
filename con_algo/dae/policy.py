@@ -91,7 +91,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # )
 
         self.actor_activate_func = nn.Tanh()
-        self.activate_func = nn.SiLU()
+        self.activate_func = nn.GELU()
 
         hidden_dim = 256
         self.observation_feature_extractor = nn.Sequential(
@@ -320,7 +320,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # trace = self.calc_jacrevian_diag(latent_vf.detach(), anchor_actions, mu)
         ex_adv =  f_anchor + trace
         
-        advantages = f_a
+        advantages = f_a - ex_adv
         advantages = advantages.squeeze(-1)
         # advantages = advantages - advantages.mean()
 

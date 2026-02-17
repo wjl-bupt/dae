@@ -608,7 +608,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 value_loss = self._value_loss(deltas, values, last_values)
                 # value_loss = self.vf_coef * value_loss + 0.1 * (1.0 / (advantages.std() + 1.0)).mean() 
                 # value_loss += (ex_adv**2).mean()
-                value_loss = value_loss + 0.5 * (ex_adv**2).mean()
+                # value_loss = value_loss + 0.2 * (ex_adv**2).mean()
                 # add a new loss penalty
                 self.policy.optimizer_vf.zero_grad(set_to_none=True)
                 value_loss.backward()
