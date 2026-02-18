@@ -1,6 +1,6 @@
-batch_size: 256
+batch_size: 1024
 clip_range:
-    init: 0.1
+    init: 0.2
     final: 0
     ftype: "linear"
 vf_coef: 0.5
@@ -11,4 +11,4 @@ learning_rate:
     ftype: "linear"
 n_epochs: 10
 n_steps: 256
-nenvs: 32
+nenvs: 256

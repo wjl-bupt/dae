@@ -19,6 +19,7 @@ from datetime import datetime
 import wandb
 import argparse
 import numpy as np
+import torch as th
 import os
 import yaml
 import torch.nn as nn
@@ -109,6 +110,7 @@ def load_hparam(hfile):
         else:
             # NOTE(junweiluo): mujoco use flatten observation
             pass
+    # hparam['stats_window_size'] = par["nenvs"]
     return hparam, par["nenvs"]
 
 
@@ -129,7 +131,7 @@ def get_mujoco_env(e, envs, args, logdir):
     )
     # env = ClipAction(env)
     from stable_baselines3.common.vec_env import VecNormalize
-    env = VecNormalize(env, norm_obs=True, norm_reward=True)
+    env = VecNormalize(env, norm_obs=True, norm_reward=True,)
     env = VecLogger(env, logdir)
     return env, 0
 
@@ -158,9 +160,15 @@ def get_discrete_env(e, envs, args, logdir):
         frameskip = 4
     return env, frameskip
 
-
-# def get_env(e, envs, args, logdir):
-
+def set_seed(seed: int):
+    import random
+    random.seed(seed)
+    np.random.seed(seed)
+    th.manual_seed(seed)
+    th.cuda.manual_seed(seed)
+    th.cuda.manual_seed_all(seed)
+    th.backends.cudnn.deterministic = True
+    th.backends.cudnn.benchmark = False
 
 
 def finish(env, algo, steps):
@@ -217,7 +225,7 @@ if __name__ == "__main__":
         if not callable(v):
             print(k, v)
     
-    
+    set_seed(int(args.seed))
     print(f"N_ENVS: {nenvs}    SEED: {args.seed}")
     print("List of envs: ", args.envs)
     
