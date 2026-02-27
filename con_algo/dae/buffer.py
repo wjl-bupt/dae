@@ -226,10 +226,10 @@ class CustomBuffer(BaseBuffer):
             _mu = self.mu[start:end]
             _noise = self.noises[start:end]
             with th.no_grad():
-                _, adv, _, _ = policy.predict_value(_obs, _act, _mu, log_std, _noise)
+                _, adv = policy.predict_value(_obs, _act, _mu, log_std, _noise)
             # lens = len(adv)
             # last_advlam = adv[-1]
-            # gl = 0.99 * 0.95
+            # gl = 0.99 * 1.0
             # for t in range(lens-2, -1, -1):
             #     adv[t] = adv[t] + gl * adv[t+1]
             self.advantages[start:end] = adv

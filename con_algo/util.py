@@ -55,8 +55,10 @@ class DiagGaussianDistribution:
             return log_prob
 
 
-    def entropy(self) -> Optional[th.Tensor]:
-        return sum_independent_dims(self.distribution.entropy())
+    def entropy(self, need_sum = True) -> Optional[th.Tensor]:
+        if need_sum:
+            return sum_independent_dims(self.distribution.entropy())
+        return self.distribution.entropy()
 
     def sample(self) -> th.Tensor:
         # Reparametrization trick to pass gradients

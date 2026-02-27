@@ -129,7 +129,7 @@ def get_mujoco_env(e, envs, args, logdir):
     )
     # env = ClipAction(env)
     from stable_baselines3.common.vec_env import VecNormalize
-    env = VecNormalize(env, norm_obs=True, norm_reward=True)
+    env = VecNormalize(env, norm_obs=True, norm_reward=True, clip_reward=1.0)
     env = VecLogger(env, logdir)
     return env, 0
 
@@ -139,7 +139,7 @@ def get_discrete_env(e, envs, args, logdir):
         env = make_vec_env(
             env_id=e,
             n_envs=envs,
-            seed=args.seed,
+            seed=args.seed * envs,
             vec_env_cls=CustomVecEnv,
             vec_env_kwargs=dict(threads=args.threads),
         )
