@@ -94,35 +94,34 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         self.activate_func = nn.Tanh()
 
         hidden_dim = 256
-        hidden_dim = 64
         self.observation_feature_extractor = nn.Sequential(
-            layer_init(nn.Linear(self.observation_space.shape[0], hidden_dim)),
-            self.actor_activate_func,
-            layer_init(nn.Linear(hidden_dim, hidden_dim)),
-            self.actor_activate_func,
-            # SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2,
-            #              hidden_dim = hidden_dim, activation = self.activate_func)
+            # layer_init(nn.Linear(self.observation_space.shape[0], hidden_dim)),
+            # self.actor_activate_func,
+            # layer_init(nn.Linear(hidden_dim, hidden_dim)),
+            # self.actor_activate_func,
+            SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2,
+                         hidden_dim = hidden_dim, activation = self.activate_func)
         )
         self.action_net = nn.Sequential(
             layer_init(nn.Linear(hidden_dim, self.action_space.shape[0]), std=0.01),
         )
         self.log_std = nn.Parameter(th.zeros(self.action_space.shape[0]))
         self.value_net = nn.Sequential(
-            layer_init(nn.Linear(self.observation_space.shape[0], hidden_dim), std = np.sqrt(2)),
-            self.activate_func,
-            layer_init(nn.Linear(hidden_dim, hidden_dim), std = np.sqrt(2)),
-            self.activate_func,
-            # SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2,
-            #              hidden_dim = hidden_dim, activation = self.activate_func),
+            # layer_init(nn.Linear(self.observation_space.shape[0], hidden_dim), std = np.sqrt(2)),
+            # self.activate_func,
+            # layer_init(nn.Linear(hidden_dim, hidden_dim), std = np.sqrt(2)),
+            # self.activate_func,
+            SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2,
+                         hidden_dim = hidden_dim, activation = self.activate_func),
             layer_init(nn.Linear(hidden_dim, 1), std=1.0),
         )
         self.advantage_net = nn.Sequential(
-            layer_init(nn.Linear(self.observation_space.shape[0], hidden_dim), std = np.sqrt(2)),
-            self.activate_func,
-            layer_init(nn.Linear(hidden_dim, hidden_dim), std = np.sqrt(2)),
-            self.activate_func,
-            # SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2,
-            #              hidden_dim = hidden_dim, activation = self.activate_func)
+            # layer_init(nn.Linear(self.observation_space.shape[0], hidden_dim), std = np.sqrt(2)),
+            # self.activate_func,
+            # layer_init(nn.Linear(hidden_dim, hidden_dim), std = np.sqrt(2)),
+            # self.activate_func,
+            SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2,
+                         hidden_dim = hidden_dim, activation = self.activate_func)
         )
         self.w1 = nn.Sequential(
             layer_init(nn.Linear(hidden_dim, self.action_space.shape[0]), std = 0.1)

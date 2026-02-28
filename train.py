@@ -239,8 +239,8 @@ if __name__ == "__main__":
                 use_full_action = False
             else:
                 use_full_action = hparam['full_action']
-            run_name = f"{args.algo}_{_env}_seed{args.seed}_fullact{use_full_action}_epochs{hparam['n_epochs']}_{time_str}_{cur_timestamp}"
-            group_name = f"{args.algo}_{_env}_fullact{use_full_action}_epochs{hparam['n_epochs']}"
+            run_name = f"{args.algo}_{_env}_seed{args.seed}_fullact{use_full_action}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}_{time_str}_{cur_timestamp}"
+            group_name = f"{args.algo}_{_env}_fullact{use_full_action}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}"
 
             
             wandb.init(
@@ -266,6 +266,9 @@ if __name__ == "__main__":
                     hidden_dim=256,
                     activation=nn.Tanh(),
                 ),
+                net_arch=dict(pi=[], vf=[]), 
+                share_features_extractor=dict(),
+                # features_extractor = False,
             )
         else:
             policy_kwargs = hparam.get("policy_kwargs", dict())

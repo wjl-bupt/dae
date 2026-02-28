@@ -64,10 +64,3 @@ class VanillaPPO(PPO):
         super().train()
 
 
-# PPO训练时评估
-import os
-import numpy as np
-import torch as th
-from stable_baselines3.common.callbacks import BaseCallback
-
-

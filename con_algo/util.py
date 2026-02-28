@@ -274,10 +274,10 @@ class ResidualBlock(nn.Module):
         # self.layer_norm = nn.LayerNorm(input_dim)
         self.block = nn.Sequential(
             nn.LayerNorm(input_dim),
-            nn.Linear(input_dim, hidden_dim),
+            layer_init(nn.Linear(input_dim, hidden_dim)),
             # nn.GELU(approximate="tanh"),
             activation,
-            nn.Linear(hidden_dim, input_dim),
+            layer_init(nn.Linear(hidden_dim, input_dim)),
             # activation,
         )
 
@@ -296,7 +296,7 @@ class SimBaEncoder(nn.Module):
         super().__init__(*args, **kwargs)
         self.activation = activation
         self.pre_encoder = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
+            layer_init(nn.Linear(input_dim, hidden_dim)),
             nn.LayerNorm(hidden_dim),
             activation,
         )
