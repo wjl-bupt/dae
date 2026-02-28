@@ -18,3 +18,4 @@ n_epochs_vf: 10
 n_steps: 32
 shared: true
 nenvs: 1024
+nheads: 2

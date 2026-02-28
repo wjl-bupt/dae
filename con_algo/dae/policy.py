@@ -42,7 +42,9 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         shared_features_extractor: bool = True,
         net_arch : List[Union[int, Dict[str, List[int]]]] = [dict(pi=[64, 64], vf=[64, 64])],
         activation_fn : Optional[nn.Module] = nn.Tanh,
+        nheads : int = 2
     ):
+        self.nheads = nheads
         self.shared_features_extractor = shared_features_extractor
         # if lr_schedule_vf else None
         self.lr_vf = lr_schedule_vf(1) if lr_schedule_vf else None
@@ -72,6 +74,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         self.high = th.from_numpy(self.action_space.high).float()
         self.low = th.from_numpy(self.action_space.low).float()
         self.action_dist = DiagGaussianDistribution(self.action_space.shape[0])
+        
         
         self.ema_ex_adv = 0.0
         self.ema_coef = 0.9
@@ -123,12 +126,20 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2,
                          hidden_dim = hidden_dim, activation = self.activate_func)
         )
-        self.w1 = nn.Sequential(
-            layer_init(nn.Linear(hidden_dim, self.action_space.shape[0]), std = 0.1)
+        # self.w1 = nn.Sequential(
+        #     layer_init(nn.Linear(hidden_dim, self.action_space.shape[0]), std = 0.1)
+        # )
+        # self.w2 = nn.Sequential(
+        #     layer_init(nn.Linear(hidden_dim, self.action_space.shape[0]), std = 0.1)
+        # )
+        
+        self.ws = nn.Sequential(
+            layer_init(nn.Linear(hidden_dim, self.action_space.shape[0] * self.nheads), std = 0.1)
         )
-        self.w2 = nn.Sequential(
-            layer_init(nn.Linear(hidden_dim, self.action_space.shape[0]), std = 0.1)
-        )
+        
+        # self.ws = nn.ModuleList([
+        #     layer_init(nn.Linear(hidden_dim, self.action_space.shape[0]), std = 0.1) for _ in range(self.nheads)
+        # ])
         
         # self.advantage_net = nn.Sequential(
         #     layer_init(nn.Linear(hidden_dim, hidden_dim)),
@@ -264,20 +275,31 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         entropy = entropy_indepent.sum(-1)
         
         latent_w = self.advantage_net(obs)
-        w1 = self.w1(latent_w)
-        w2 = self.w2(latent_w)
+        # w1 = self.w1(latent_w)
+        # w2 = self.w2(latent_w)
+        ws = self.ws(latent_w).view(mu.size(0), self.nheads, self.action_space.shape[0])
+        
+
         # advantages = - w_s * (log_policies_indepent.detach() + entropy_indepent.detach())
         with th.no_grad():
             z1 =  (actions - mu) / th.exp(log_std)
-            z2 = (z1**2 - 1)
+            zs = [z1]
+            for k in range(1, self.nheads):
+                zs.append((
+                    z1.pow(2*k) - \
+                    (math.factorial(2*k) / (2**k * math.factorial(k)))
+                ))
+            # shape is [batch, nheads, action_dim]
+            zs = th.stack(zs, dim = 1)
             # z1 = - 0.5 * (z**2 - 1) + 0.005 * (z**4 - 3)
-            old_dist = self.action_dist.proba_distribution(mu, log_std)
-            old_log_policies = old_dist.log_prob(actions, False)
-            old_entropy = old_dist.entropy(False)
-            
+            # old_dist = self.action_dist.proba_distribution(mu, log_std)
+            # old_log_policies = old_dist.log_prob(actions, False)
+            # old_entropy = old_dist.entropy(False)
+        # shape is [B, N, D] --> [B, D]
+        advantages = (ws * zs).sum(dim = 1)
         # advantages = - w_s * (old_log_policies + old_entropy)
-        advantages = - (w1 * z1 + w2 * z2)
-        advantages = advantages.mean(-1)
+        # advantages = - (w1 * z1 + w2 * z2)
+        advantages = advantages.sum(-1)
 
         values = self.value_net(obs)
         

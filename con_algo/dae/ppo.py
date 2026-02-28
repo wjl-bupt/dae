@@ -99,6 +99,7 @@ class CustomPPO(OnPolicyAlgorithm):
         seed: Optional[int] = None,
         device: Union[th.device, str] = "auto",
         _init_setup_model: bool = True,
+        nheads: int = 2,
         # NOTE(junweiluo):
         # use_wandb: bool = False,
         # wandb_project: Optional[str] = None,
