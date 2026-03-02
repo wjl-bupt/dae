@@ -75,6 +75,19 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         self.low = th.from_numpy(self.action_space.low).float()
         self.action_dist = DiagGaussianDistribution(self.action_space.shape[0])
         
+        self.pow_vector = th.arange(1, self.nheads + 1, 1).to(self.device)
+        
+        even_mask = (self.pow_vector % 2 ==0)
+        m = self.pow_vector // 2
+        self.const = th.zeros_like(self.pow_vector, dtype=th.float32, device=self.device)
+        self.const[even_mask] = (
+            th.exp(
+                th.lgamma(self.pow_vector[even_mask] + 1)
+                - (m[even_mask] * th.log(th.tensor(2.0, device=self.device)))
+                - th.lgamma(m[even_mask] + 1)
+            )
+        )
+        
         
         self.ema_ex_adv = 0.0
         self.ema_coef = 0.9
@@ -252,27 +265,32 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # advantages = - w_s * (log_policies_indepent.detach() + entropy_indepent.detach())
         with th.no_grad():
             z1 =  (actions - mu) / th.exp(log_std)
-            zs = [z1]
-            for k in range(1, self.nheads):
-                if k % 2 == 1:
-                    zs.append(z1.pow(k))
-                else:
-                    m = k // 2
-                    zs.append((
-                        z1.pow(2*m) - \
-                        (math.factorial(2*m) / (2**m * math.factorial(m)))
-                    ))
-            # shape is [batch, nheads, action_dim]
-            zs = th.stack(zs, dim = 1)
-            # z1 = - 0.5 * (z**2 - 1) + 0.005 * (z**4 - 3)
-            # old_dist = self.action_dist.proba_distribution(mu, log_std)
-            # old_log_policies = old_dist.log_prob(actions, False)
-            # old_entropy = old_dist.entropy(False)
-        # shape is [B, N, D] --> [B, D]
-        advantages = (ws * zs)
-        # advantages = - w_s * (old_log_policies + old_entropy)
-        # advantages = - (w1 * z1 + w2 * z2)
-        advantages = advantages.sum(1).mean(-1)
+            gamma = 0.1
+            z2 = th.exp(gamma * z1.pow(2)) - 1 / math.sqrt(1 - 2 * gamma)
+            zs = th.stack([z1, z2], dim = 1)
+            # zs = [z1]
+            # for k in range(2, self.nheads+1):
+            #     if k % 2 == 1:
+            #         zs.append(z1.pow(k))
+            #     else:
+            #         m = k // 2
+            #         zs.append((
+            #             z1.pow(2*m) - \
+            #             (math.factorial(2*m) / (2**m * math.factorial(m)))
+            #         ))
+            # # shape is [batch, nheads, action_dim]
+            # zs = th.stack(zs, dim = 1)
+            
+            
+            # z1_exp = z1.unsqueeze(1)                     # [B,1,d]
+            # k = self.pow_vector.view(1, self.nheads, 1).to(z1.device)
+            # const = self.const.view(1, self.nheads, 1).to(z1.device) 
+            # z_powers = z1_exp.pow(k)
+            # zs = z_powers - const    
+
+        # shape is [B, N, D]
+        advantages =  - (ws * zs)
+        advantages = advantages.mean(1).mean(1)
 
         values = self.value_net(self.value_feature_extractor(obs))
         

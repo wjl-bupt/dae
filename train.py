@@ -275,7 +275,7 @@ if __name__ == "__main__":
                 features_extractor_kwargs=dict(
                     block_num=2,
                     hidden_dim=256,
-                    activation=nn.Tanh(),
+                    activation=nn.SiLU(),
                 ),
                 net_arch=dict(pi=[], vf=[]), 
                 share_features_extractor=dict(),

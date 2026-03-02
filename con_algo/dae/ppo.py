@@ -149,6 +149,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self.clip_range = clip_range
         self.kl_coef = kl_coef
         self.shared = shared
+        self.nheads = nheads
 
         if not shared:
             warnings.warn(
@@ -222,8 +223,8 @@ class CustomPPO(OnPolicyAlgorithm):
             mu = mu.cpu().numpy()
             # np.clip(actions, self.policy.action_space.low, self.policy.action_space.high)
             new_obs, rewards, dones, infos = env.step(
-                # actions
-                np.clip(actions, self.action_space.low, self.action_space.high)
+                actions
+                # np.clip(actions, self.action_space.low, self.action_space.high)
             )
             self.num_timesteps += env.num_envs
 
@@ -268,6 +269,7 @@ class CustomPPO(OnPolicyAlgorithm):
             lr_schedule=self.lr_schedule,
             lr_schedule_vf=self.lr_schedule,
             shared_features_extractor=self.shared,
+            nheads = self.nheads,
             **self.policy_kwargs,
         )
         self.policy = self.policy.to(self.device)
@@ -299,16 +301,16 @@ class CustomPPO(OnPolicyAlgorithm):
 
         return (advantages - advantages.mean() ) / (advantages.std() + eps)
 
-    def _value_loss(self, rewards, advantages, values, lasts):
+    def _value_loss(self, deltas, values, lasts):
+
         loss = th.cat(
             [
                 (
-                    (self.discount_matrix[: len(r), : len(r)].matmul(r)
-                    - self.lambda_discount_matrix[:len(a), :len(a)].matmul(a))
-                    + l * self.discount_vector[-len(r) :]
+                    self.discount_matrix[: len(d), : len(d)].matmul(d)
+                    + l * self.discount_vector[-len(d) :]
                     - v
                 ).square()
-                for r, a, v, l in zip(rewards, advantages,values, lasts)
+                for d, v, l in zip(deltas, values, lasts)
             ]
         ).mean()
 
@@ -426,12 +428,11 @@ class CustomPPO(OnPolicyAlgorithm):
                 values = values.flatten().split(lengths)
                 # dae_correction = False
                 if self.dae_correction:
-                    # deltas = (
-                    #     rewards - advantages
-                    # ).split(lengths)
+                    deltas = (
+                        rewards - advantages
+                    ).split(lengths)
                     value_loss = self._value_loss(
-                        rewards.split(lengths), 
-                        advantages.split(lengths), 
+                        deltas,
                         values, 
                         last_values
                     )
@@ -553,6 +554,11 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("advantage/advantage_std", advantages_.cpu().std().item())
         self.logger.record("advantage/advantage_max", advantages_.cpu().max().item())
         self.logger.record("advantage/advantage_min", advantages_.cpu().min().item())
+        
+        self.logger.record("advantage/abs_advantage_mean", advantages_.abs().cpu().mean().item())
+        self.logger.record("advantage/abs_advantage_std", advantages_.abs().cpu().std().item())
+        self.logger.record("advantage/abs_advantage_max", advantages_.abs().cpu().max().item())
+        self.logger.record("advantage/abs_advantage_min", advantages_.abs().cpu().min().item())
 
         self.logger.record("values/V_mean", concat_values.detach().cpu().mean().item())
         self.logger.record("values/V_std", concat_values.detach().cpu().std().item())
