@@ -221,7 +221,10 @@ class CustomPPO(OnPolicyAlgorithm):
             actions = actions.cpu().numpy()
             mu = mu.cpu().numpy()
             # np.clip(actions, self.policy.action_space.low, self.policy.action_space.high)
-            new_obs, rewards, dones, infos = env.step(actions)
+            new_obs, rewards, dones, infos = env.step(
+                actions
+                # np.clip(actions, self.action_space.low, self.action_space.high)
+            )
             self.num_timesteps += env.num_envs
 
             # Give access to local variables
@@ -354,21 +357,28 @@ class CustomPPO(OnPolicyAlgorithm):
         return loss, ratio
 
     def _compute_advantages_(self, raw_advantages):
-        advantages = []
-        for adv_series in raw_advantages:
-            lens = len(adv_series)
-            cumulative_advantages = th.zeros_like(adv_series)
-            # cumulative_advantages[-1] = raw_advantages[-1]
-            last_adv = adv_series[-1]
-            for t in range(lens - 1, -1, -1):
-                if t == (lens - 1):
-                    cumulative_advantages[t] = last_adv
-                else:
-                    cumulative_advantages[t] = last_adv * self.gamma * self.lambda_ + adv_series[t]
-                    last_adv = cumulative_advantages[t]
-            advantages.extend(cumulative_advantages.cpu().detach().tolist())
-        
-        return th.tensor(advantages).to(raw_advantages[0].device)
+        gamma_lambda = self.gamma * self.lambda_
+
+        lengths = [len(x) for x in raw_advantages]
+        padded = th.nn.utils.rnn.pad_sequence(
+            raw_advantages,
+            batch_first=True
+        )
+
+        B, T = padded.shape
+        mask = th.arange(T, device=padded.device).expand(B, T) < \
+            th.tensor(lengths, device=padded.device).unsqueeze(1)
+
+        advantages = th.zeros_like(padded)
+        last = th.zeros(B, device=padded.device)
+
+        for t in reversed(range(T)):
+            last = padded[:, t] + gamma_lambda * last
+            last = last * mask[:, t]
+            advantages[:, t] = last
+        return advantages[mask]
+
+        # return th.tensor(advantages).to(raw_advantages[0].device)
 
 
     def _train_shared(self) -> None:

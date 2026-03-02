@@ -32,6 +32,10 @@ from con_algo.util import PeriodicCheckpointCallback, EvalCallback
 from stable_baselines3.common.callbacks import CallbackList
 
 
+class ClipActionWrapper(gym.ActionWrapper):
+    def action(self, action):
+        return np.clip(action, self.action_space.low, self.action_space.high)
+
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -118,13 +122,18 @@ def get_default_hparam(args):
 
 # NOTE(junweiluo): add mujoco env maker
 def get_mujoco_env(e, envs, args, logdir):
+    if "HalfCheetah" in e:
+        clip_action_wrapper = ClipActionWrapper
+    else:
+        clip_action_wrapper = None
+    
     env = make_vec_env(
         env_id=e,
         n_envs=envs,
         seed=args.seed,
         vec_env_cls=CustomVecEnv,
         vec_env_kwargs=dict(threads=args.threads),
-        # wrapper_class=ClipAction,
+        wrapper_class=clip_action_wrapper,
         # env_kwargs=dict(render_mode=None), 
     )
     # env = ClipAction(env)
@@ -237,10 +246,12 @@ if __name__ == "__main__":
 
             if args.algo == "PPO":
                 use_full_action = False
+                nheads = 1
             else:
                 use_full_action = hparam['full_action']
-            run_name = f"{args.algo}_{_env}_seed{args.seed}_fullact{use_full_action}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}_{time_str}_{cur_timestamp}"
-            group_name = f"{args.algo}_{_env}_fullact{use_full_action}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}"
+                nheads = hparam['nheads']
+            run_name = f"{args.algo}_{_env}_seed{args.seed}_nheads{nheads}_fullact{use_full_action}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}_{time_str}_{cur_timestamp}"
+            group_name = f"{args.algo}_{_env}_nheads{nheads}_fullact{use_full_action}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}"
 
             
             wandb.init(

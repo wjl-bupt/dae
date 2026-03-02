@@ -15,7 +15,7 @@ learning_rate:
     ftype: "linear"
 n_epochs: 6
 n_epochs_vf: 6
-n_steps: 64
+n_steps: 32
 shared: true
-nenvs: 4
+nenvs: 8
 nheads: 2

@@ -97,7 +97,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         self.activate_func = nn.Tanh()
 
         hidden_dim = 256
-        self.observation_feature_extractor = nn.Sequential(
+        self.actor_feature_extractor = nn.Sequential(
             # layer_init(nn.Linear(self.observation_space.shape[0], hidden_dim)),
             # self.actor_activate_func,
             # layer_init(nn.Linear(hidden_dim, hidden_dim)),
@@ -109,16 +109,11 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             layer_init(nn.Linear(hidden_dim, self.action_space.shape[0]), std=0.01),
         )
         self.log_std = nn.Parameter(th.zeros(self.action_space.shape[0]))
-        self.value_net = nn.Sequential(
-            # layer_init(nn.Linear(self.observation_space.shape[0], hidden_dim), std = np.sqrt(2)),
-            # self.activate_func,
-            # layer_init(nn.Linear(hidden_dim, hidden_dim), std = np.sqrt(2)),
-            # self.activate_func,
-            SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2,
-                         hidden_dim = hidden_dim, activation = self.activate_func),
-            layer_init(nn.Linear(hidden_dim, 1), std=1.0),
-        )
-        self.advantage_net = nn.Sequential(
+        self.value_feature_extractor = SimBaEncoder(
+            input_dim = self.observation_space.shape[0], block_num = 2,
+            hidden_dim = hidden_dim, activation = self.activate_func)
+        self.value_net = nn.Linear(hidden_dim, 1)
+        self.advantage_feature_extractor = nn.Sequential(
             # layer_init(nn.Linear(self.observation_space.shape[0], hidden_dim), std = np.sqrt(2)),
             # self.activate_func,
             # layer_init(nn.Linear(hidden_dim, hidden_dim), std = np.sqrt(2)),
@@ -126,51 +121,27 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2,
                          hidden_dim = hidden_dim, activation = self.activate_func)
         )
-        # self.w1 = nn.Sequential(
-        #     layer_init(nn.Linear(hidden_dim, self.action_space.shape[0]), std = 0.1)
-        # )
-        # self.w2 = nn.Sequential(
-        #     layer_init(nn.Linear(hidden_dim, self.action_space.shape[0]), std = 0.1)
-        # )
         
-        self.ws = nn.Sequential(
-            layer_init(nn.Linear(hidden_dim, self.action_space.shape[0] * self.nheads), std = 0.1)
-        )
-        
-        # self.ws = nn.ModuleList([
-        #     layer_init(nn.Linear(hidden_dim, self.action_space.shape[0]), std = 0.1) for _ in range(self.nheads)
-        # ])
-        
-        # self.advantage_net = nn.Sequential(
-        #     layer_init(nn.Linear(hidden_dim, hidden_dim)),
-        #     self.activate_func,
-        #     layer_init(nn.Linear(hidden_dim, hidden_dim)),
-        #     self.activate_func,
-        #     layer_init(nn.Linear(hidden_dim, self.action_space.shape[0]), std = 1.0)    
-        # )
-        # self.advantage_net = nn.Sequential(
-        #     layer_init(nn.Linear(hidden_dim * 2, hidden_dim), std=np.sqrt(2)),
-        #     self.activate_func,
-        #     layer_init(nn.Linear(hidden_dim, hidden_dim), std=np.sqrt(2)),
-        #     self.activate_func,
-        #     layer_init(nn.Linear(hidden_dim, 1), std=0.1)
-        # )
+        self.ws = nn.Linear(hidden_dim, self.action_space.shape[0] * self.nheads)
 
 
         # Init weights: use orthogonal initialization
         # with small initial weight for the output
-        # if self.ortho_init:
-        #     # TODO: check for features_extractor
-        #     # Values from stable-baselines.
-        #     # features_extractor/mlp values are
-        #     # originally from openai/baselines (default gains/init_scales).
-        #     module_gains = {
-        #         self.observation_feature_extractor: np.sqrt(2),
-        #         self.critic_observation_feature_extractor: np.sqrt(2),
-        #         self.action_feature_extractor: np.sqrt(2),
-        #     }
-        #     for module, gain in module_gains.items():
-        #         module.apply(partial(self.init_weights, gain=gain))
+        if self.ortho_init:
+            # TODO: check for features_extractor
+            # Values from stable-baselines.
+            # features_extractor/mlp values are
+            # originally from openai/baselines (default gains/init_scales).
+            module_gains = {
+                self.actor_feature_extractor: np.sqrt(2),
+                self.value_feature_extractor: np.sqrt(2),
+                self.advantage_feature_extractor : np.sqrt(2),
+                self.action_net: 0.01,
+                self.value_net : 1.0,
+                self.ws: 1.0,
+            }
+            for module, gain in module_gains.items():
+                module.apply(partial(self.init_weights, gain=gain))
 
         # Setup optimizer with initial learning rate
         # TODO(junweiluo) (self.lr_vf is not None) and 
@@ -200,7 +171,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # feature = self.features_extractor(obs)
         # latent_obs, latent_vf = self.mlp_extractor(feature)
 
-        latent_pi = self.observation_feature_extractor(obs)
+        latent_pi = self.actor_feature_extractor(obs)
         # latent_vf = self.critic_observation_feature_extractor(obs)
         # latent_vf = self.value_feature_extractor(obs)
         return latent_pi, None
@@ -242,7 +213,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         mean_actions, log_std = self.calc_meam_std(latent_pi)
 
         dist = self.action_dist.proba_distribution(mean_actions, log_std)
-        actions = dist.sample()          
+        actions = dist.sample()
+        # actions = th.clamp(dist.sample(), th.tensor(self.action_space.low, device=obs.device), th.tensor(self.action_space.high,  device=obs.device))          
         # rsample = reparameterization
         # actions_w_tanh = nn.functional.tanh(actions)
 
@@ -251,7 +223,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # log_policies -= th.log(1 - actions_w_tanh.pow(2) + 1e-8)
         # log_policies = log_policies.sum(-1)
             
-        values = self.value_net(obs)
+        values = self.value_net(self.value_feature_extractor(obs))
 
         return actions, mean_actions, log_policies, values, actions
 
@@ -268,13 +240,10 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         new_log_std = self.log_std
         
         dist = self.action_dist.proba_distribution(mean_actions, new_log_std)
-        log_policies_indepent = dist.log_prob(actions, False)
-        entropy_indepent = dist.entropy(False)
+        log_policies = dist.log_prob(actions)
+        entropy = dist.entropy()
         
-        log_policies = log_policies_indepent.sum(-1)
-        entropy = entropy_indepent.sum(-1)
-        
-        latent_w = self.advantage_net(obs)
+        latent_w = self.advantage_feature_extractor(obs)
         # w1 = self.w1(latent_w)
         # w2 = self.w2(latent_w)
         ws = self.ws(latent_w).view(mu.size(0), self.nheads, self.action_space.shape[0])
@@ -296,12 +265,12 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             # old_log_policies = old_dist.log_prob(actions, False)
             # old_entropy = old_dist.entropy(False)
         # shape is [B, N, D] --> [B, D]
-        advantages = (ws * zs).sum(dim = 1)
+        advantages = (ws * zs)
         # advantages = - w_s * (old_log_policies + old_entropy)
         # advantages = - (w1 * z1 + w2 * z2)
-        advantages = advantages.sum(-1)
+        advantages = advantages.sum(1).mean(-1)
 
-        values = self.value_net(obs)
+        values = self.value_net(self.value_feature_extractor(obs))
         
         return values, advantages, log_policies, entropy
         # return values, advantages, log_probs, distribution.entropy()
@@ -343,7 +312,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         if actions is None:
             advantages = None
             # latent_vf, _ = self._extract_latent(obs)
-            values = self.value_net(obs)
+            values = self.value_net(self.value_feature_extractor(obs))
             return values, advantages
         else:
             values, advantages, log_probs, entropy = self.evaluate_actions(obs, actions, mu, log_std, noise)

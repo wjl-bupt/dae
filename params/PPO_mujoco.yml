@@ -1,4 +1,4 @@
-batch_size: 1024
+batch_size: 512
 clip_range:
     init: 0.2
     final: 0
@@ -10,5 +10,5 @@ learning_rate:
     final: 0
     ftype: "linear"
 n_epochs: 10
-n_steps: 32
-nenvs: 1024
+n_steps: 64
+nenvs: 64
