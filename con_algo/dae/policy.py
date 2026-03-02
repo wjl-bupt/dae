@@ -254,10 +254,14 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             z1 =  (actions - mu) / th.exp(log_std)
             zs = [z1]
             for k in range(1, self.nheads):
-                zs.append((
-                    z1.pow(2*k) - \
-                    (math.factorial(2*k) / (2**k * math.factorial(k)))
-                ))
+                if k % 2 == 1:
+                    zs.append(z1.pow(k))
+                else:
+                    m = k // 2
+                    zs.append((
+                        z1.pow(2*m) - \
+                        (math.factorial(2*m) / (2**m * math.factorial(m)))
+                    ))
             # shape is [batch, nheads, action_dim]
             zs = th.stack(zs, dim = 1)
             # z1 = - 0.5 * (z**2 - 1) + 0.005 * (z**4 - 3)

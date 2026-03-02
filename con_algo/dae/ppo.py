@@ -222,8 +222,8 @@ class CustomPPO(OnPolicyAlgorithm):
             mu = mu.cpu().numpy()
             # np.clip(actions, self.policy.action_space.low, self.policy.action_space.high)
             new_obs, rewards, dones, infos = env.step(
-                actions
-                # np.clip(actions, self.action_space.low, self.action_space.high)
+                # actions
+                np.clip(actions, self.action_space.low, self.action_space.high)
             )
             self.num_timesteps += env.num_envs
 
