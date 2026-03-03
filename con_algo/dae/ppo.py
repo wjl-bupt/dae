@@ -400,8 +400,8 @@ class CustomPPO(OnPolicyAlgorithm):
 
         
         for epoch in range(self.n_epochs):
-            with th.no_grad():
-                self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size)
+            # with th.no_grad():
+            #     self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size)
             ex_advs = []
             # if self.advantage_normalization:
             #     self.rollout_buffer.advantages = (self.rollout_buffer.advantages - self.rollout_buffer.advantages.mean()) / (self.rollout_buffer.advantages.std() + 1e-8)
@@ -415,14 +415,15 @@ class CustomPPO(OnPolicyAlgorithm):
                 last_values = data.last_values
                 lengths = data.lengths
                 advantages_ = data.advantages
-                noises = data.noises
+                # log_std = data.noises
 
                 (
                     values,
                     advantages,
                     log_policies,
                     entropy,
-                ) = self.policy.evaluate_state(data.observations, actions, mu, log_std, noises)
+                    ws,
+                ) = self.policy.evaluate_state(data.observations, actions, mu, log_std, log_std)
 
                 # value loss
                 values = values.flatten().split(lengths)
@@ -438,6 +439,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     )
                 else:
                     advs = advantages.split(lengths)
+                    # Q - V = A
                     value_loss = th.cat(
                         [
                             (
@@ -459,7 +461,7 @@ class CustomPPO(OnPolicyAlgorithm):
 
                 # normalize adv
                 advantages_ = advantages.detach().clone()
-                advantages_ = self._compute_advantages_(advantages_.split(lengths))
+                # advantages_ = self._compute_advantages_(advantages_.split(lengths))
                 if self.advantage_normalization:
                     advantages_norm = self._normalize_advantage(advantages_, policies = None)
 
@@ -475,17 +477,13 @@ class CustomPPO(OnPolicyAlgorithm):
                 # entropy_loss = th.mean((- log_policies.detach() + self.policy.target_entropy) * self.policy.log_alpha.exp())
                 # full loss
                 kl_loss = ((ratio - 1) - ratio.log()).mean()
-
+                
                 # log_alpha
                 loss = (
                     policy_loss
                     + self.ent_coef * entropy_loss
                     + self.kl_coef * kl_loss
                     + self.vf_coef * value_loss
-                    # + 0.05 * (trace**2).mean()
-                    # + 0.5 * (ex_adv**2).mean()
-                    # + 0.5 * th.mean(approx_expectation**2)
-                    # + self.vf_coef * (advantages.mean())**2
                 )
 
                 losses.append(loss.item())
@@ -581,6 +579,13 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("rewards/reward_mean", self.rollout_buffer.rewards.mean().item())
         self.logger.record("rewards/reward_max", self.rollout_buffer.rewards.max().item())
         self.logger.record("rewards/reward_min", self.rollout_buffer.rewards.min().item())
+        
+        self.logger.record("weights/ws_max", ws.detach().cpu().max().item())
+        self.logger.record("weights/ws_min", ws.detach().cpu().min().item())
+        self.logger.record("weights/ws_mean", ws.detach().cpu().mean().item())
+        self.logger.record("weights/ws_std", ws.detach().cpu().std().item())
+        
+        
                         
 
     def _train_separate(self) -> None:
