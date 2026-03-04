@@ -156,7 +156,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 "Training with seperate actor/critic is deprecated, use at your own risk"
             )
         self.dae_correction = dae_correction
-        self.lambda_ = 1.0
+        self.lambda_ = 0.95
         self.gl = self.gamma * self.lambda_
         self.discount_matrix = th.tensor(
             [
@@ -176,7 +176,7 @@ class CustomPPO(OnPolicyAlgorithm):
             device=self.device,
         )
         
-        self.discount_vector = self.gl ** th.arange(
+        self.discount_vector = self.gamma ** th.arange(
             n_steps, 0, -1, dtype=th.float32, device=self.device
         )
 
@@ -302,6 +302,18 @@ class CustomPPO(OnPolicyAlgorithm):
         return (advantages - advantages.mean() ) / (advantages.std() + eps)
 
     def _value_loss(self, deltas, values, lasts):
+        # traj_level_loss = [
+        #         (
+        #             self.discount_matrix[: len(d), : len(d)].matmul(d)
+        #             + l * self.discount_vector[-len(d) :]
+        #             - v
+        #         ).square().unsqueeze(-1)
+        #         for d, v, l in zip(deltas, values, lasts)
+        # ]
+        # traj_sum = list(map(sum, traj_level_loss))
+        # loss = th.cat(traj_sum).mean()
+        
+        # return loss
 
         loss = th.cat(
             [
@@ -427,7 +439,7 @@ class CustomPPO(OnPolicyAlgorithm):
 
                 # value loss
                 values = values.flatten().split(lengths)
-                # dae_correction = False
+                self.dae_correction = False
                 if self.dae_correction:
                     deltas = (
                         rewards - advantages
@@ -461,7 +473,7 @@ class CustomPPO(OnPolicyAlgorithm):
 
                 # normalize adv
                 advantages_ = advantages.detach().clone()
-                # advantages_ = self._compute_advantages_(advantages_.split(lengths))
+                advantages_ = self._compute_advantages_(advantages_.split(lengths))
                 if self.advantage_normalization:
                     advantages_norm = self._normalize_advantage(advantages_, policies = None)
 
@@ -478,6 +490,9 @@ class CustomPPO(OnPolicyAlgorithm):
                 # full loss
                 kl_loss = ((ratio - 1) - ratio.log()).mean()
                 
+                # avoid collapse
+                # k = th.arange(1, self.action_space.shape[0] + 1, 1).view(1, 1, self.action_space.shape[0]).to(ws.device)
+                # ac_loss = (ws * k).pow(2).mean()                
                 # log_alpha
                 loss = (
                     policy_loss
@@ -568,13 +583,13 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("Q_values/Q_values_max", q_values.detach().cpu().max().item())
         self.logger.record("Q_values/Q_values_min", q_values.detach().cpu().min().item())
 
-        self.logger.record("actions/action_mean", actions.mean().item())
-        self.logger.record("actions/action_max", actions.max().item())
-        self.logger.record("actions/action_min", actions.min().item())
+        self.logger.record("actions/actions_mean", (actions - mu).mean().item())
+        self.logger.record("actions/actions_max", (actions - mu).max().item())
+        self.logger.record("actions/actions_min", (actions - mu).min().item())
 
-        self.logger.record("actions/mu_mean", self.rollout_buffer.mu.mean().item())
-        self.logger.record("actions/mu_max", self.rollout_buffer.mu.max().item())
-        self.logger.record("actions/mu_min", self.rollout_buffer.mu.min().item())
+        # self.logger.record("actions/mu_mean", self.rollout_buffer.mu.mean().item())
+        # self.logger.record("actions/mu_max", self.rollout_buffer.mu.max().item())
+        # self.logger.record("actions/mu_min", self.rollout_buffer.mu.min().item())
         
         self.logger.record("rewards/reward_mean", self.rollout_buffer.rewards.mean().item())
         self.logger.record("rewards/reward_max", self.rollout_buffer.rewards.max().item())

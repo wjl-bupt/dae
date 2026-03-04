@@ -1,6 +1,6 @@
 advantage_normalization: true
-batch_size: 64
-batch_size_vf: 64
+batch_size: 32
+batch_size_vf: 32
 clip_range:
     init: 0.1
     final: 0
@@ -8,7 +8,7 @@ clip_range:
 ent_coef: 0.01
 full_action: false
 kl_coef: 0.0
-vf_coef: 1.5
+vf_coef: 0.1
 learning_rate:
     init: 0.00025
     final: 0
@@ -18,4 +18,4 @@ n_epochs_vf: 6
 n_steps: 32
 shared: true
 nenvs: 8
-nheads: 2
+nheads: 4

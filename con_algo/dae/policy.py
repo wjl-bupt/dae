@@ -75,8 +75,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         self.low = th.from_numpy(self.action_space.low).float()
         self.action_dist = DiagGaussianDistribution(self.action_space.shape[0])
         
-        self.pow_vector = th.arange(1, self.nheads + 1, 1).to(self.device)
         
+        self.pow_vector = th.arange(1, self.nheads + 1, 1).to(self.device)
         even_mask = (self.pow_vector % 2 ==0)
         m = self.pow_vector // 2
         self.const = th.zeros_like(self.pow_vector, dtype=th.float32, device=self.device)
@@ -127,17 +127,13 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             hidden_dim = hidden_dim, activation = self.activate_func
         )
         self.value_net = nn.Linear(hidden_dim, 1)
-        self.advantage_feature_extractor = nn.Sequential(
-            # layer_init(nn.Linear(self.observation_space.shape[0], hidden_dim), std = np.sqrt(2)),
-            # self.activate_func,
-            # layer_init(nn.Linear(hidden_dim, hidden_dim), std = np.sqrt(2)),
-            # self.activate_func,
-            SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2,
-                         hidden_dim = hidden_dim, activation = self.activate_func)
+        self.advantage_feature_extractor = SimBaEncoder(
+            input_dim = self.observation_space.shape[0], block_num = 2,
+            hidden_dim = hidden_dim, activation = self.activate_func
         )
-        
-        self.ws = nn.Linear(hidden_dim, self.action_space.shape[0] * self.nheads)
 
+        self.ws = nn.Linear(hidden_dim, self.action_space.shape[0] * self.nheads)
+        self.log_scales = nn.Parameter(th.zeros(self.action_space.shape[0]))
 
         # Init weights: use orthogonal initialization
         # with small initial weight for the output
@@ -152,7 +148,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 self.advantage_feature_extractor : np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net : 1.0,
-                self.ws: 0.1,
+                self.ws: 1.0,
             }
             for module, gain in module_gains.items():
                 module.apply(partial(self.init_weights, gain=gain))
@@ -258,32 +254,44 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         entropy = dist.entropy()
         
         latent_w = self.advantage_feature_extractor(obs)
-        # w1 = self.w1(latent_w)
-        # w2 = self.w2(latent_w)
         ws = self.ws(latent_w).view(mu.size(0), self.nheads, self.action_space.shape[0])
-        
 
         # advantages = - w_s * (log_policies_indepent.detach() + entropy_indepent.detach())
         with th.no_grad():
             z1 =  (actions - mu) / th.exp(log_std)
-            # gamma = ws[:,1,:] # shape is [B,1,d]
+            # gamma = 0.10
             # z2 = th.exp(gamma * z1.pow(2)) - 1 / math.sqrt(1 - 2 * gamma)
             # zs = th.stack([z1, z2], dim = 1)
 
+            # zs = th.cos(z1) * z1
+            # zs = zs.unsqueeze(1)
+
             
             # 使用多项式拟合优势函数
-            z1_exp = z1.unsqueeze(1)                     # [B,1,d]
-            k = self.pow_vector.view(1, self.nheads, 1).to(z1.device)
-            const = self.const.view(1, self.nheads, 1).to(z1.device) 
-            z_powers = z1_exp.pow(k)
-            zs = z_powers - const
+            # z1_exp = z1.unsqueeze(1)                     # [B,1,d]
+            # k = self.pow_vector.view(1, self.nheads, 1).to(z1.device)
+            # const = self.const.view(1, self.nheads, 1).to(z1.device) 
+            # z_powers = z1_exp.pow(k)
+            # zs = z_powers - const
             
-            # 基函数拟合
+            # # 基函数拟合
+            h0 = th.ones_like(z1).unsqueeze(1)
+            h1 = z1.unsqueeze(1)
+            h2 = (z1.pow(2) - 1).unsqueeze(1)
+            h3 = (z1.pow(3) - 3*z1).unsqueeze(1)
+            zs = th.concat([h0, h1, h2, h3], dim = 1)
             
-
+            # k = th.arange(1, self.nheads + 1, 1).view(1, self.nheads, 1).to(z1.device)
+            # z1_exp = z1.unsqueeze(1)
+            # cos_term = th.cos(z1_exp)
+            # sin_term = th.sin(z1_exp)
+            # zs = th.concat([cos_term, sin_term], dim =1)   
+            # zs = cos_term + sin_term 
+        
         # shape is [B, N, D]
         advantages =  ws * zs
-        advantages = advantages.sum(1).sum(1)
+        advantages = advantages.sum(1).mean(1)
+        # advantages = (self.log_scales.exp() * advantages).mean(1)
         values = self.value_net(self.value_feature_extractor(obs))
         
         return values, advantages, log_policies, entropy, ws
