@@ -12,8 +12,8 @@ PROJECT="mujoco-sb3-dae"
 
 # Mujoco 环境列表
 ENVS=(
-    "HalfCheetah-v5"
     "Humanoid-v5"
+    "HalfCheetah-v5"
     "Hopper-v5"
     "Ant-v5"
     # "HumanoidStandup-v5"
@@ -21,8 +21,8 @@ ENVS=(
     "InvertedPendulum-v5"
     "InvertedDoublePendulum-v5"
     "Walker2d-v5"
-    # "Reacher-v5"
-    # "Pusher-v5"
+    "Reacher-v5"
+    "Pusher-v5"
 )
 
 # 运行的最大 seed 数量

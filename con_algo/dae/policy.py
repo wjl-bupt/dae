@@ -122,19 +122,17 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         self.action_net = nn.Linear(hidden_dim, self.action_space.shape[0])
         # self.log_std = layer_init(nn.Linear(hidden_dim, self.action_space.shape[0]), std=0.01)
         self.log_std = nn.Parameter(th.zeros(self.action_space.shape[0]))
-        self.value_feature_extractor = SimBaEncoder(
-            input_dim = self.observation_space.shape[0], block_num = 2,
-            hidden_dim = hidden_dim, activation = self.activate_func
-        )
+        # self.value_feature_extractor = SimBaEncoder(
+        #     input_dim = self.observation_space.shape[0], block_num = 2,
+        #     hidden_dim = hidden_dim, activation = self.activate_func
+        # )
         self.value_net = nn.Linear(hidden_dim, 1)
-        self.advantage_feature_extractor = SimBaEncoder(
-            input_dim = self.observation_space.shape[0], block_num = 2,
-            hidden_dim = hidden_dim, activation = self.activate_func
-        )
+        # self.advantage_feature_extractor = SimBaEncoder(
+        #     input_dim = self.observation_space.shape[0], block_num = 2,
+        #     hidden_dim = hidden_dim, activation = self.activate_func
+        # )
 
         self.ws = nn.Linear(hidden_dim, self.action_space.shape[0] * self.nheads)
-        self.log_scales = nn.Parameter(th.zeros(self.action_space.shape[0]))
-
         # Init weights: use orthogonal initialization
         # with small initial weight for the output
         if self.ortho_init:
@@ -144,11 +142,11 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             # originally from openai/baselines (default gains/init_scales).
             module_gains = {
                 self.actor_feature_extractor: np.sqrt(2),
-                self.value_feature_extractor: np.sqrt(2),
-                self.advantage_feature_extractor : np.sqrt(2),
+                # self.value_feature_extractor: np.sqrt(2),
+                # self.advantage_feature_extractor : np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net : 1.0,
-                self.ws: 1.0,
+                self.ws: 0.1,
             }
             for module, gain in module_gains.items():
                 module.apply(partial(self.init_weights, gain=gain))
@@ -233,7 +231,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # log_policies -= th.log(1 - actions_w_tanh.pow(2) + 1e-8)
         # log_policies = log_policies.sum(-1)
             
-        values = self.value_net(self.value_feature_extractor(obs))
+        values = self.value_net(latent_pi)
 
         return actions, mean_actions, log_policies, values, actions
 
@@ -253,12 +251,14 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         log_policies = dist.log_prob(actions)
         entropy = dist.entropy()
         
-        latent_w = self.advantage_feature_extractor(obs)
-        ws = self.ws(latent_w).view(mu.size(0), self.nheads, self.action_space.shape[0])
+        # latent_w = self.advantage_feature_extractor(obs)
+        ws = self.ws(latent_pi).view(mu.size(0), self.nheads, self.action_space.shape[0])
 
         # advantages = - w_s * (log_policies_indepent.detach() + entropy_indepent.detach())
         with th.no_grad():
-            z1 =  (actions - mu) / th.exp(log_std)
+            z1 =  (actions - mean_actions) / (th.exp(self.log_std) + 1e-10)
+            # sigma = th.exp(2 * log_std)
+            # sigma = th.exp(2 * self.log_std.detach())
             # gamma = 0.10
             # z2 = th.exp(gamma * z1.pow(2)) - 1 / math.sqrt(1 - 2 * gamma)
             # zs = th.stack([z1, z2], dim = 1)
@@ -268,18 +268,23 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
 
             
             # 使用多项式拟合优势函数
-            # z1_exp = z1.unsqueeze(1)                     # [B,1,d]
-            # k = self.pow_vector.view(1, self.nheads, 1).to(z1.device)
-            # const = self.const.view(1, self.nheads, 1).to(z1.device) 
-            # z_powers = z1_exp.pow(k)
-            # zs = z_powers - const
+            z1_exp = z1.unsqueeze(1)                     # [B,1,d]
+            k = self.pow_vector.view(1, self.nheads, 1).to(z1.device)
+            const = self.const.view(1, self.nheads, 1).to(z1.device) 
+            z_powers = z1_exp.pow(k)
+            zs = z_powers - const
+            
+            # z1_exp = z1.unsqueeze(1)   
+            # z1 = z1_exp
+            # z2 = z1_exp.pow(2) - sigma
+            # zs = th.concat([z1, z2], dim = 1)
             
             # # 基函数拟合
-            h0 = th.ones_like(z1).unsqueeze(1)
-            h1 = z1.unsqueeze(1)
-            h2 = (z1.pow(2) - 1).unsqueeze(1)
-            h3 = (z1.pow(3) - 3*z1).unsqueeze(1)
-            zs = th.concat([h0, h1, h2, h3], dim = 1)
+            # h0 = th.ones_like(z1).unsqueeze(1)
+            # h1 = z1.unsqueeze(1)
+            # h2 = (z1.pow(2) - 1).unsqueeze(1)
+            # h3 = (z1.pow(3) - 3*z1).unsqueeze(1)
+            # zs = th.concat([h0, h1, h2, h3], dim = 1)
             
             # k = th.arange(1, self.nheads + 1, 1).view(1, self.nheads, 1).to(z1.device)
             # z1_exp = z1.unsqueeze(1)
@@ -292,9 +297,9 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         advantages =  ws * zs
         advantages = advantages.sum(1).mean(1)
         # advantages = (self.log_scales.exp() * advantages).mean(1)
-        values = self.value_net(self.value_feature_extractor(obs))
+        values = self.value_net(latent_pi)
         
-        return values, advantages, log_policies, entropy, ws
+        return values, advantages, log_policies, entropy, ws[:,0,:]
         # return values, advantages, log_probs, distribution.entropy()
     
     def evaluate_state(
@@ -334,7 +339,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         if actions is None:
             advantages = None
             # latent_vf, _ = self._extract_latent(obs)
-            values = self.value_net(self.value_feature_extractor(obs))
+            values = self.value_net(self.actor_feature_extractor(obs))
             return values, advantages
         else:
             values, advantages, log_probs, entropy, ws = self.evaluate_actions(obs, actions, mu, log_std, noise)

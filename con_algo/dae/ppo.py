@@ -169,7 +169,7 @@ class CustomPPO(OnPolicyAlgorithm):
         
         self.lambda_discount_matrix = th.tensor(
             [
-                [0 if j < i else (self.gl) ** (j - i) for j in range(n_steps)]
+                [0 if j < i else (self.gamma) ** (j - i) for j in range(n_steps)]
                 for i in range(n_steps)
             ],
             dtype=th.float32,
@@ -583,9 +583,9 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("Q_values/Q_values_max", q_values.detach().cpu().max().item())
         self.logger.record("Q_values/Q_values_min", q_values.detach().cpu().min().item())
 
-        self.logger.record("actions/actions_mean", (actions - mu).mean().item())
-        self.logger.record("actions/actions_max", (actions - mu).max().item())
-        self.logger.record("actions/actions_min", (actions - mu).min().item())
+        self.logger.record("actions/actions_mean", (actions).mean().item())
+        self.logger.record("actions/actions_max", (actions).max().item())
+        self.logger.record("actions/actions_min", (actions).min().item())
 
         # self.logger.record("actions/mu_mean", self.rollout_buffer.mu.mean().item())
         # self.logger.record("actions/mu_max", self.rollout_buffer.mu.max().item())

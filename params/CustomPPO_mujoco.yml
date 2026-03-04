@@ -8,7 +8,7 @@ clip_range:
 ent_coef: 0.0
 full_action: false
 kl_coef: 0.0
-vf_coef: 0.5
+vf_coef: 1.5
 learning_rate:
     init: 0.00025
     final: 0
@@ -18,4 +18,4 @@ n_epochs_vf: 10
 n_steps: 64
 shared: true
 nenvs: 64
-nheads: 4
+nheads: 2
