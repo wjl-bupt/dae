@@ -122,15 +122,15 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         self.action_net = nn.Linear(hidden_dim, self.action_space.shape[0])
         # self.log_std = layer_init(nn.Linear(hidden_dim, self.action_space.shape[0]), std=0.01)
         self.log_std = nn.Parameter(th.zeros(self.action_space.shape[0]))
-        # self.value_feature_extractor = SimBaEncoder(
-        #     input_dim = self.observation_space.shape[0], block_num = 2,
-        #     hidden_dim = hidden_dim, activation = self.activate_func
-        # )
+        self.value_feature_extractor = SimBaEncoder(
+            input_dim = self.observation_space.shape[0], block_num = 2,
+            hidden_dim = hidden_dim, activation = self.activate_func
+        )
         self.value_net = nn.Linear(hidden_dim, 1)
-        # self.advantage_feature_extractor = SimBaEncoder(
-        #     input_dim = self.observation_space.shape[0], block_num = 2,
-        #     hidden_dim = hidden_dim, activation = self.activate_func
-        # )
+        self.advantage_feature_extractor = SimBaEncoder(
+            input_dim = self.observation_space.shape[0], block_num = 2,
+            hidden_dim = hidden_dim, activation = self.activate_func
+        )
 
         self.ws = nn.Linear(hidden_dim, self.action_space.shape[0] * self.nheads)
         # Init weights: use orthogonal initialization
@@ -142,8 +142,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             # originally from openai/baselines (default gains/init_scales).
             module_gains = {
                 self.actor_feature_extractor: np.sqrt(2),
-                # self.value_feature_extractor: np.sqrt(2),
-                # self.advantage_feature_extractor : np.sqrt(2),
+                self.value_feature_extractor: np.sqrt(2),
+                self.advantage_feature_extractor : np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net : 1.0,
                 self.ws: 0.1,
@@ -231,7 +231,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # log_policies -= th.log(1 - actions_w_tanh.pow(2) + 1e-8)
         # log_policies = log_policies.sum(-1)
             
-        values = self.value_net(latent_pi)
+        values = self.value_net(self.value_feature_extractor(obs))
 
         return actions, mean_actions, log_policies, values, actions
 
@@ -251,8 +251,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         log_policies = dist.log_prob(actions)
         entropy = dist.entropy()
         
-        # latent_w = self.advantage_feature_extractor(obs)
-        ws = self.ws(latent_pi).view(mu.size(0), self.nheads, self.action_space.shape[0])
+        latent_w = self.advantage_feature_extractor(obs)
+        ws = self.ws(latent_w).view(mu.size(0), self.nheads, self.action_space.shape[0])
 
         # advantages = - w_s * (log_policies_indepent.detach() + entropy_indepent.detach())
         with th.no_grad():
@@ -297,7 +297,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         advantages =  ws * zs
         advantages = advantages.sum(1).mean(1)
         # advantages = (self.log_scales.exp() * advantages).mean(1)
-        values = self.value_net(latent_pi)
+        values = self.value_net(self.value_feature_extractor(obs))
         
         return values, advantages, log_policies, entropy, ws[:,0,:]
         # return values, advantages, log_probs, distribution.entropy()
@@ -339,7 +339,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         if actions is None:
             advantages = None
             # latent_vf, _ = self._extract_latent(obs)
-            values = self.value_net(self.actor_feature_extractor(obs))
+            values = self.value_net(self.value_feature_extractor(obs))
             return values, advantages
         else:
             values, advantages, log_probs, entropy, ws = self.evaluate_actions(obs, actions, mu, log_std, noise)

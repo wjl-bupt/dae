@@ -1,12 +1,12 @@
 batch_size: 512
-clip_range:
-    init: 0.2
-    final: 0
-    ftype: "linear"
+# clip_range:
+#     init: 0.2
+#     final: 0
+#     ftype: "linear"
 vf_coef: 0.5
 ent_coef: 0.0
 learning_rate:
-    init: 0.00025
+    init: 0.0003
     final: 0
     ftype: "linear"
 n_epochs: 10

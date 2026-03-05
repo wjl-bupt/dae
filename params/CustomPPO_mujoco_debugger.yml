@@ -2,15 +2,15 @@ advantage_normalization: true
 batch_size: 32
 batch_size_vf: 32
 clip_range:
-    init: 0.1
+    init: 0.2
     final: 0
     ftype: "linear"
 ent_coef: 0.01
 full_action: false
 kl_coef: 0.0
-vf_coef: 0.1
+vf_coef: 1.5
 learning_rate:
-    init: 0.00025
+    init: 0.0025
     final: 0
     ftype: "linear"
 n_epochs: 6
