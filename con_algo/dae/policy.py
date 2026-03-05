@@ -24,7 +24,7 @@ from torch.optim import Adam, AdamW
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor, MlpExtractor, FlattenExtractor, NatureCNN
 from copy import deepcopy
 from con_algo.util import DiagGaussianDistribution, layer_init, SimBaEncoder
-from torch.distributions import Normal
+from torch.distributions import Normal, Categorical
 
 
 
@@ -45,6 +45,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         nheads : int = 2
     ):
         self.nheads = nheads
+        self.bins = 50
+        self.advantage_max = 10
         self.shared_features_extractor = shared_features_extractor
         # if lr_schedule_vf else None
         self.lr_vf = lr_schedule_vf(1) if lr_schedule_vf else None
@@ -87,7 +89,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 - th.lgamma(m[even_mask] + 1)
             )
         )
-        
+        self.supports = th.linspace(-self.advantage_max, self.advantage_max, self.bins)
         # self.pow_vector = th.arange(1, self.nheads+2, 2)
         
         self.ema_ex_adv = 0.0
@@ -131,9 +133,16 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             input_dim = self.observation_space.shape[0], block_num = 2,
             hidden_dim = hidden_dim, activation = self.activate_func
         )
-
-        self.ws = nn.Linear(hidden_dim, self.action_space.shape[0] * self.nheads)
-        self.log_scales = nn.Parameter(th.zeros(self.action_space.shape[0]))
+        self.action_feature_extractor = SimBaEncoder(
+            input_dim = self.action_space.shape[0], block_num = 2,
+            hidden_dim = hidden_dim, activation = self.activate_func
+        )
+        self.advantage_net = nn.Sequential(
+            nn.Linear(hidden_dim * 2, hidden_dim * 2),
+            self.activate_func,
+            nn.Linear(hidden_dim * 2, self.bins),
+        )
+        # self.ss = nn.Linear(hidden_dim, self.action_space.shape[0])
 
         # Init weights: use orthogonal initialization
         # with small initial weight for the output
@@ -146,9 +155,10 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 self.actor_feature_extractor: np.sqrt(2),
                 self.value_feature_extractor: np.sqrt(2),
                 self.advantage_feature_extractor : np.sqrt(2),
+                self.action_feature_extractor : np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net : 1.0,
-                self.ws: 1.0,
+                # self.advantage_net : 0.01,
             }
             for module, gain in module_gains.items():
                 module.apply(partial(self.init_weights, gain=gain))
@@ -253,48 +263,36 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         log_policies = dist.log_prob(actions)
         entropy = dist.entropy()
         
+
+
+        # shape is [B, B, D]
         latent_w = self.advantage_feature_extractor(obs)
-        ws = self.ws(latent_w).view(mu.size(0), self.nheads, self.action_space.shape[0])
+        latent_actions = self.action_feature_extractor(actions)
 
-        # advantages = - w_s * (log_policies_indepent.detach() + entropy_indepent.detach())
         with th.no_grad():
-            z1 =  (actions - mu) / th.exp(log_std)
-            # gamma = 0.10
-            # z2 = th.exp(gamma * z1.pow(2)) - 1 / math.sqrt(1 - 2 * gamma)
-            # zs = th.stack([z1, z2], dim = 1)
-
-            # zs = th.cos(z1) * z1
-            # zs = zs.unsqueeze(1)
-
+            # repeat tensor to avoid unuseful sample
+            latent_obs_repeat = latent_w.unsqueeze(0).repeat(obs.size(0), 1, 1).transpose(0, 1).reshape(-1, latent_w.shape[-1])
+            latent_actions_repeat = latent_actions.unsqueeze(0).repeat(actions.size(0), 1, 1).reshape(-1, latent_actions.shape[-1])
             
-            # 使用多项式拟合优势函数
-            # z1_exp = z1.unsqueeze(1)                     # [B,1,d]
-            # k = self.pow_vector.view(1, self.nheads, 1).to(z1.device)
-            # const = self.const.view(1, self.nheads, 1).to(z1.device) 
-            # z_powers = z1_exp.pow(k)
-            # zs = z_powers - const
-            
-            # # 基函数拟合
-            h0 = th.ones_like(z1).unsqueeze(1)
-            h1 = z1.unsqueeze(1)
-            h2 = (z1.pow(2) - 1).unsqueeze(1)
-            h3 = (z1.pow(3) - 3*z1).unsqueeze(1)
-            zs = th.concat([h0, h1, h2, h3], dim = 1)
-            
-            # k = th.arange(1, self.nheads + 1, 1).view(1, self.nheads, 1).to(z1.device)
-            # z1_exp = z1.unsqueeze(1)
-            # cos_term = th.cos(z1_exp)
-            # sin_term = th.sin(z1_exp)
-            # zs = th.concat([cos_term, sin_term], dim =1)   
-            # zs = cos_term + sin_term 
+            # logits is [B, B, bins]
+            supports = self.supports.unsqueeze(0).to(mu.device)
+            logits = self.advantage_net(th.cat([latent_obs_repeat, latent_actions_repeat], dim = 1)).view(obs.size(0), obs.size(0), self.bins)
+            probs = th.softmax(logits, dim = 2)
+            # probs = probs.view(obs.size(0), obs.size(0), self.bins)
+            # shape is [B*B]
+            advantages = (probs * supports.unsqueeze(0)).sum(2).view(obs.size(0), obs.size(0))
+            ex_advantages = advantages.mean(1)
         
-        # shape is [B, N, D]
-        advantages =  ws * zs
-        advantages = advantages.sum(1).mean(1)
-        # advantages = (self.log_scales.exp() * advantages).mean(1)
+        logits_real = self.advantage_net(th.cat([latent_w, latent_actions], dim = 1))
+        probs_real = th.softmax(logits_real, dim = 1)
+        raw_advantages = (probs_real * supports).sum(1)
+        raw_advantages = th.diagonal(advantages)
+        c50_entropy = Categorical(logits = logits_real).entropy().mean()
+        advantages = raw_advantages - ex_advantages
+        
         values = self.value_net(self.value_feature_extractor(obs))
         
-        return values, advantages, log_policies, entropy, ws
+        return values, advantages, log_policies, entropy, probs, c50_entropy
         # return values, advantages, log_probs, distribution.entropy()
     
     def evaluate_state(

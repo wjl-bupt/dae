@@ -279,6 +279,7 @@ class CustomBuffer(BaseBuffer):
             batch_size = len(self.observations)
 
         indices = np.random.permutation(len(self.start_indices))
+        indices = np.arange(len(self.start_indices))
 
         start_idx = 0
         while start_idx < len(indices):

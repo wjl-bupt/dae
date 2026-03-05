@@ -435,11 +435,12 @@ class CustomPPO(OnPolicyAlgorithm):
                     log_policies,
                     entropy,
                     ws,
+                    ex_f,
                 ) = self.policy.evaluate_state(data.observations, actions, mu, log_std, log_std)
 
                 # value loss
                 values = values.flatten().split(lengths)
-                self.dae_correction = False
+                # self.dae_correction = False
                 if self.dae_correction:
                     deltas = (
                         rewards - advantages
@@ -497,8 +498,10 @@ class CustomPPO(OnPolicyAlgorithm):
                 loss = (
                     policy_loss
                     + self.ent_coef * entropy_loss
+                    + 0.01 * (- ex_f.mean())
                     + self.kl_coef * kl_loss
                     + self.vf_coef * value_loss
+                    # + self.vf_coef * ex_f.pow(2).mean()
                 )
 
                 losses.append(loss.item())
@@ -595,10 +598,10 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("rewards/reward_max", self.rollout_buffer.rewards.max().item())
         self.logger.record("rewards/reward_min", self.rollout_buffer.rewards.min().item())
         
-        self.logger.record("weights/ws_max", ws.detach().cpu().max().item())
-        self.logger.record("weights/ws_min", ws.detach().cpu().min().item())
-        self.logger.record("weights/ws_mean", ws.detach().cpu().mean().item())
-        self.logger.record("weights/ws_std", ws.detach().cpu().std().item())
+        self.logger.record("probs/probs_max", ws.detach().cpu().max().item())
+        self.logger.record("probs/probs_min", ws.detach().cpu().min().item())
+        self.logger.record("probs/probs_mean", ws.detach().cpu().mean().item())
+        self.logger.record("probs/probs_std", ws.detach().cpu().std().item())
         
         
                         
