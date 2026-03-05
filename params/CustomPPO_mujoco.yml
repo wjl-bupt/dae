@@ -1,6 +1,6 @@
 advantage_normalization: true
-batch_size: 512
-batch_size_vf: 512
+batch_size: 256
+batch_size_vf: 256
 ent_coef: 0.0
 full_action: false
 kl_coef: 0.0
@@ -9,9 +9,9 @@ learning_rate:
     init: 0.0003
     final: 0
     ftype: "linear"
-n_epochs: 10
-n_epochs_vf: 10
-n_steps: 64
+n_epochs: 6
+n_epochs_vf: 6
+n_steps: 256
 shared: true
-nenvs: 64
+nenvs: 8
 nheads: 2

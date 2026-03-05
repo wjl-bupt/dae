@@ -27,15 +27,21 @@ class VanillaPPO(PPO):
 
         # ===== 2. 统计信息 =====
         adv_mean = advantages.mean().item()
-        adv_std  = advantages.std(unbiased=False).item()
+        adv_std  = advantages.std().item()
         adv_min  = advantages.min().item()
         adv_max  = advantages.max().item()
 
         # ===== 3. 记录到 logger =====
-        self.logger.record("advantage/advantage_mean", adv_mean, self.num_timesteps)
-        self.logger.record("advantage/advantage_std", adv_std, self.num_timesteps)
-        self.logger.record("advantage/advantage_min", adv_min, self.num_timesteps)
-        self.logger.record("advantage/advantage_max", adv_max, self.num_timesteps)
+        self.logger.record("adv/adv_mean", adv_mean, self.num_timesteps)
+        self.logger.record("adv/adv_std", adv_std, self.num_timesteps)
+        self.logger.record("adv/adv_min", adv_min, self.num_timesteps)
+        self.logger.record("adv/adv_max", adv_max, self.num_timesteps)
+
+
+        self.logger.record("adv/abs_adv_mean", advantages.abs().mean().item(), self.num_timesteps)
+        self.logger.record("adv/abs_adv_std", advantages.abs().std().item(), self.num_timesteps)
+        self.logger.record("adv/abs_adv_min", advantages.abs().min().item(), self.num_timesteps)
+        self.logger.record("adv/abs_adv_max", advantages.abs().max().item(), self.num_timesteps)
         
         # add some metrics for value function statistics
         values = self.rollout_buffer.values
@@ -47,10 +53,10 @@ class VanillaPPO(PPO):
         
         vf_max  = values.max().item()
         
-        self.logger.record("value/V_mean", vf_mean, self.num_timesteps)
-        self.logger.record("value/V_std", vf_std, self.num_timesteps)
-        self.logger.record("value/V_min", vf_min, self.num_timesteps)
-        self.logger.record("value/V_max", vf_max, self.num_timesteps)
+        self.logger.record("values/V_mean", vf_mean, self.num_timesteps)
+        self.logger.record("values/V_std", vf_std, self.num_timesteps)
+        self.logger.record("values/V_min", vf_min, self.num_timesteps)
+        self.logger.record("values/V_max", vf_max, self.num_timesteps)
         
         # add some metrics for actions statistics
         actions = self.rollout_buffer.actions

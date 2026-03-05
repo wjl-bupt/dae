@@ -88,10 +88,6 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             )
         )
         
-        # self.pow_vector = th.arange(1, self.nheads+2, 2)
-        
-        self.ema_ex_adv = 0.0
-        self.ema_coef = 0.9
 
     def _build(self, lr_schedule: Schedule) -> None:
         """
@@ -142,7 +138,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 self.advantage_feature_extractor : np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net : 1.0,
-                self.ws: 0.01,
+                self.ws: 0.1,
             }
             for module, gain in module_gains.items():
                 module.apply(partial(self.init_weights, gain=gain))
