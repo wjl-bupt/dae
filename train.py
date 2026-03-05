@@ -36,6 +36,10 @@ class ClipActionWrapper(gym.ActionWrapper):
     def action(self, action):
         return np.clip(action, self.action_space.low, self.action_space.high)
 
+class RewardNormalizationWrapper(gym.RewardWrapper):
+    def reward(self, reward, reward_max = 10.0):
+        return reward / 10.0
+
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -133,12 +137,12 @@ def get_mujoco_env(e, envs, args, logdir):
         seed=args.seed,
         vec_env_cls=CustomVecEnv,
         vec_env_kwargs=dict(threads=args.threads),
-        wrapper_class=clip_action_wrapper,
+        wrapper_class=RewardNormalizationWrapper,
         # env_kwargs=dict(render_mode=None), 
     )
     # env = ClipAction(env)
     from stable_baselines3.common.vec_env import VecNormalize
-    env = VecNormalize(env, norm_obs=True, norm_reward=True)
+    env = VecNormalize(env, norm_obs=True, norm_reward=False)
     env = VecLogger(env, logdir)
     return env, 0
 

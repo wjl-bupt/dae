@@ -268,31 +268,45 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # shape is [B, B, D]
         latent_w = self.advantage_feature_extractor(obs)
         latent_actions = self.action_feature_extractor(actions)
-
-        with th.no_grad():
-            # repeat tensor to avoid unuseful sample
-            latent_obs_repeat = latent_w.unsqueeze(0).repeat(obs.size(0), 1, 1).transpose(0, 1).reshape(-1, latent_w.shape[-1])
-            latent_actions_repeat = latent_actions.unsqueeze(0).repeat(actions.size(0), 1, 1).reshape(-1, latent_actions.shape[-1])
-            
-            # logits is [B, B, bins]
-            supports = self.supports.unsqueeze(0).to(mu.device)
-            logits = self.advantage_net(th.cat([latent_obs_repeat, latent_actions_repeat], dim = 1)).view(obs.size(0), obs.size(0), self.bins)
-            probs = th.softmax(logits, dim = 2)
-            # probs = probs.view(obs.size(0), obs.size(0), self.bins)
-            # shape is [B*B]
-            advantages = (probs * supports.unsqueeze(0)).sum(2).view(obs.size(0), obs.size(0))
-            ex_advantages = advantages.mean(1)
+        latent_mu = self.action_feature_extractor(mu)
         
-        logits_real = self.advantage_net(th.cat([latent_w, latent_actions], dim = 1))
-        probs_real = th.softmax(logits_real, dim = 1)
-        raw_advantages = (probs_real * supports).sum(1)
-        raw_advantages = th.diagonal(advantages)
-        c50_entropy = Categorical(logits = logits_real).entropy().mean()
+        
+        actions_logits = self.advantage_net(th.cat([latent_w, latent_actions], dim = 1))
+        mu_logits = self.advantage_net(th.cat([latent_w, latent_mu], dim = 1))
+        
+        supports = self.supports.unsqueeze(0).to(mu.device)
+        actios_probs = th.softmax(actions_logits, dim = 1)
+        mu_probs = th.softmax(mu_logits, dim = 1)
+        raw_advantages = (actios_probs * supports).sum(1)
+        ex_advantages = (mu_probs * supports).sum(1)
         advantages = raw_advantages - ex_advantages
+        c_entropy = Categorical(logits = actions_logits).entropy().mean()
+        
+
+        # with th.no_grad():
+        #     # repeat tensor to avoid unuseful sample
+        #     latent_obs_repeat = latent_w.detach().unsqueeze(0).repeat(obs.size(0), 1, 1).transpose(0, 1).reshape(-1, latent_w.shape[-1])
+        #     latent_actions_repeat = latent_actions.detach().unsqueeze(0).repeat(actions.size(0), 1, 1).reshape(-1, latent_actions.shape[-1])
+            
+        #     # logits is [B, B, bins]
+        #     supports = self.supports.unsqueeze(0).to(mu.device)
+        #     logits = self.advantage_net(th.cat([latent_obs_repeat, latent_actions_repeat], dim = 1)).view(obs.size(0), obs.size(0), self.bins)
+        #     probs = th.softmax(logits, dim = 2)
+        #     # probs = probs.view(obs.size(0), obs.size(0), self.bins)
+        #     # shape is [B*B]
+        #     advantages = (probs * supports.unsqueeze(0)).sum(2).view(obs.size(0), obs.size(0))
+        #     ex_advantages = advantages.mean(1)
+        
+        # logits_real = self.advantage_net(th.cat([latent_w, latent_actions], dim = 1))
+        # probs_real = th.softmax(logits_real, dim = 1)
+        # raw_advantages = (probs_real * supports).sum(1)
+        # # raw_advantages = th.diagonal(advantages)
+        # c50_entropy = Categorical(logits = logits_real).entropy().mean()
+        # advantages = raw_advantages - ex_advantages
         
         values = self.value_net(self.value_feature_extractor(obs))
         
-        return values, advantages, log_policies, entropy, probs, c50_entropy
+        return values, advantages, log_policies, entropy, actios_probs, c_entropy
         # return values, advantages, log_probs, distribution.entropy()
     
     def evaluate_state(
