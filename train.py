@@ -52,6 +52,9 @@ def get_args():
     parser.add_argument(
         "--steps", type=int, default=10000000, help="Number of agent steps to train"
     )
+    # parser.add_argument(
+    #     "--clip_range", type=float, default=0.1, help="Number of agent steps to train"
+    # )
     parser.add_argument(
         "--save_model",
         default=False,
@@ -102,6 +105,8 @@ def load_hparam(hfile):
                 continue
             else:
                 hparam[k] = v
+    # 定义clip_range参数，设置为0.1，不衰减
+    hparam['clip_range'] = 0.1
     if "features_extractor" in par:
         if hparam.get("policy_kwargs") is None:
             hparam["policy_kwargs"] = dict()

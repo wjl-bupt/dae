@@ -112,10 +112,6 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
 
         hidden_dim = 256
         self.actor_feature_extractor = nn.Sequential(
-            # layer_init(nn.Linear(self.observation_space.shape[0], hidden_dim)),
-            # self.actor_activate_func,
-            # layer_init(nn.Linear(hidden_dim, hidden_dim)),
-            # self.actor_activate_func,
             SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2,
                          hidden_dim = hidden_dim, activation = self.activate_func)
         )
@@ -146,7 +142,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 self.advantage_feature_extractor : np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net : 1.0,
-                self.ws: 0.1,
+                self.ws: 0.01,
             }
             for module, gain in module_gains.items():
                 module.apply(partial(self.init_weights, gain=gain))
@@ -256,7 +252,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
 
         # advantages = - w_s * (log_policies_indepent.detach() + entropy_indepent.detach())
         with th.no_grad():
-            z1 =  (actions - mean_actions) / (th.exp(self.log_std) + 1e-10)
+            z1 =  (actions - mu) / (th.exp(log_std) + 1e-10)
             # sigma = th.exp(2 * log_std)
             # sigma = th.exp(2 * self.log_std.detach())
             # gamma = 0.10

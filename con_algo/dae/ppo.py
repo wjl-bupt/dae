@@ -439,7 +439,6 @@ class CustomPPO(OnPolicyAlgorithm):
 
                 # value loss
                 values = values.flatten().split(lengths)
-                # self.dae_correction = False
                 if self.dae_correction:
                     deltas = (
                         rewards - advantages

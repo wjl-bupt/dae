@@ -1,10 +1,6 @@
 advantage_normalization: true
 batch_size: 512
 batch_size_vf: 512
-# clip_range:
-#     init: 0.2
-#     final: 0
-#     ftype: "linear"
 ent_coef: 0.0
 full_action: false
 kl_coef: 0.0
