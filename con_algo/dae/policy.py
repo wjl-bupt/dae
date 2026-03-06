@@ -113,7 +113,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         )
         self.action_net = nn.Linear(hidden_dim, self.action_space.shape[0])
         # self.log_std = layer_init(nn.Linear(hidden_dim, self.action_space.shape[0]), std=0.01)
-        self.log_std = nn.Parameter(th.zeros(self.action_space.shape[0]))
+        self.log_std = nn.Parameter(th.ones(self.action_space.shape[0]) * (- 0.70))
         self.value_feature_extractor = SimBaEncoder(
             input_dim = self.observation_space.shape[0], block_num = 2,
             hidden_dim = hidden_dim, activation = self.activate_func
@@ -147,19 +147,19 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # TODO(junweiluo) (self.lr_vf is not None) and 
         if not self.shared_features_extractor:
             # self.modules_pi = nn.ModuleList([self.actor_feature_extractor, self.action_net, self.log_std])
-            self.modules_pi = list(self.observation_feature_extractor.parameters()) \
+            self.modules_pi = list(self.actor_feature_extractor.parameters()) \
                 + list(self.action_net.parameters()) + [self.log_std]
 
             self.optimizer = self.optimizer_class(
                 self.modules_pi, lr=lr_schedule(1), **self.optimizer_kwargs
             )
             self.modules_vf = nn.ModuleList(
-                [self.critic_observation_feature_extractor, self.action_feature_extractor,
-                 self.value_net, self.advantage_net,
+                [self.value_feature_extractor, self.advantage_feature_extractor,
+                 self.value_net, self.ws,
             ])
             # self.lr_vf
-            self.optimizer_vf = AdamW(
-                self.modules_vf.parameters(), lr = 1.5e-4,
+            self.optimizer_vf = Adam(
+                self.modules_vf.parameters(), lr = 3e-4,
             )
         else:
             self.optimizer = self.optimizer_class(
@@ -235,7 +235,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         
         
         obs = obs.float()
-        latent_pi, _ = self._extract_latent(obs)
+        latent_pi = self.actor_feature_extractor(obs)
         mean_actions = self.action_net(latent_pi)
         new_log_std = self.log_std
         
@@ -249,15 +249,6 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # advantages = - w_s * (log_policies_indepent.detach() + entropy_indepent.detach())
         with th.no_grad():
             z1 =  (actions - mu) / (th.exp(log_std) + 1e-10)
-            # sigma = th.exp(2 * log_std)
-            # sigma = th.exp(2 * self.log_std.detach())
-            # gamma = 0.10
-            # z2 = th.exp(gamma * z1.pow(2)) - 1 / math.sqrt(1 - 2 * gamma)
-            # zs = th.stack([z1, z2], dim = 1)
-
-            # zs = th.cos(z1) * z1
-            # zs = zs.unsqueeze(1)
-
             
             # 使用多项式拟合优势函数
             z1_exp = z1.unsqueeze(1)                     # [B,1,d]
@@ -266,10 +257,10 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             z_powers = z1_exp.pow(k)
             zs = z_powers - const
             
-            # z1_exp = z1.unsqueeze(1)   
-            # z1 = z1_exp
-            # z2 = z1_exp.pow(2) - sigma
-            # zs = th.concat([z1, z2], dim = 1)
+            # old_dist = self.action_dist.proba_distribution(mu, log_std)
+            # old_logpolices = old_dist.log_prob(actions, False).unsqueeze(1)
+            # old_entropy = old_dist.entropy(False).unsqueeze(1)
+            # zs = th.concat([old_entropy, old_logpolices], dim = 1)
             
             # # 基函数拟合
             # h0 = th.ones_like(z1).unsqueeze(1)
@@ -277,17 +268,11 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             # h2 = (z1.pow(2) - 1).unsqueeze(1)
             # h3 = (z1.pow(3) - 3*z1).unsqueeze(1)
             # zs = th.concat([h0, h1, h2, h3], dim = 1)
-            
-            # k = th.arange(1, self.nheads + 1, 1).view(1, self.nheads, 1).to(z1.device)
-            # z1_exp = z1.unsqueeze(1)
-            # cos_term = th.cos(z1_exp)
-            # sin_term = th.sin(z1_exp)
-            # zs = th.concat([cos_term, sin_term], dim =1)   
-            # zs = cos_term + sin_term 
+        
         
         # shape is [B, N, D]
         advantages =  ws * zs
-        advantages = advantages.sum(1).mean(1)
+        advantages = advantages.mean(1).sum(1)
         # advantages = (self.log_scales.exp() * advantages).mean(1)
         values = self.value_net(self.value_feature_extractor(obs))
         

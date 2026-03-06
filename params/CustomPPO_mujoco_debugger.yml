@@ -1,7 +1,7 @@
 advantage_normalization: true
 batch_size: 32
 batch_size_vf: 32
-ent_coef: 0.01
+ent_coef: 0.0
 full_action: false
 kl_coef: 0.0
 vf_coef: 1.5

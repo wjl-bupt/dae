@@ -38,7 +38,7 @@ class ClipActionWrapper(gym.ActionWrapper):
 
 class RewardScaleWrapper(gym.RewardWrapper):
     def reward(self, reward):
-        return reward / 10.0
+        return reward / 100.0
 
 
 def get_args():
@@ -106,7 +106,7 @@ def load_hparam(hfile):
             else:
                 hparam[k] = v
     # 定义clip_range参数，设置为0.1，不衰减
-    hparam['clip_range'] = 0.1
+    hparam['clip_range'] = 0.2
     if "features_extractor" in par:
         if hparam.get("policy_kwargs") is None:
             hparam["policy_kwargs"] = dict()
@@ -140,7 +140,7 @@ def get_mujoco_env(e, envs, args, logdir):
     env = make_vec_env(
         env_id=e,
         n_envs=envs,
-        seed=args.seed,
+        seed=args.seed * envs,
         vec_env_cls=CustomVecEnv,
         vec_env_kwargs=dict(threads=args.threads),
         # wrapper_class=RewardScaleWrapper,
