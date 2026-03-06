@@ -103,7 +103,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         #     nn.Tanh(),
         # )
 
-        self.actor_activate_func = nn.Tanh()
+        self.adv_activate_func = nn.SiLU()
         self.activate_func = nn.Tanh()
 
         hidden_dim = 256
@@ -113,18 +113,25 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         )
         self.action_net = nn.Linear(hidden_dim, self.action_space.shape[0])
         # self.log_std = layer_init(nn.Linear(hidden_dim, self.action_space.shape[0]), std=0.01)
-        self.log_std = nn.Parameter(th.ones(self.action_space.shape[0]) * (- 0.70))
+        # * (- 0.70)
+        self.log_std = nn.Parameter(th.zeros(self.action_space.shape[0]) )
         self.value_feature_extractor = SimBaEncoder(
             input_dim = self.observation_space.shape[0], block_num = 2,
             hidden_dim = hidden_dim, activation = self.activate_func
         )
-        self.value_net = nn.Linear(hidden_dim, 1)
+        self.value_net = nn.Linear(hidden_dim, 2)
         self.advantage_feature_extractor = SimBaEncoder(
-            input_dim = self.observation_space.shape[0], block_num = 2,
-            hidden_dim = hidden_dim, activation = self.activate_func
+            input_dim = self.observation_space.shape[0], block_num = 4,
+            hidden_dim = hidden_dim, activation = self.adv_activate_func
         )
 
-        self.ws = nn.Linear(hidden_dim, self.action_space.shape[0] * self.nheads)
+        self.ws = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            self.adv_activate_func,
+            nn.Linear(hidden_dim, hidden_dim),
+            self.adv_activate_func,
+            nn.Linear(hidden_dim, self.action_space.shape[0] * self.nheads)
+        )
         # Init weights: use orthogonal initialization
         # with small initial weight for the output
         if self.ortho_init:
@@ -223,7 +230,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # log_policies -= th.log(1 - actions_w_tanh.pow(2) + 1e-8)
         # log_policies = log_policies.sum(-1)
             
-        values = self.value_net(self.value_feature_extractor(obs))
+        values, _ = self.value_net(self.value_feature_extractor(obs)).min(1, keepdim = True)
 
         return actions, mean_actions, log_policies, values, actions
 
@@ -272,9 +279,9 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         
         # shape is [B, N, D]
         advantages =  ws * zs
-        advantages = advantages.mean(1).sum(1)
+        advantages = advantages.mean(1).mean(1)
         # advantages = (self.log_scales.exp() * advantages).mean(1)
-        values = self.value_net(self.value_feature_extractor(obs))
+        values, _ = self.value_net(self.value_feature_extractor(obs)).min(1, keepdim = True)
         
         return values, advantages, log_policies, entropy, ws[:,0,:]
         # return values, advantages, log_probs, distribution.entropy()
@@ -316,7 +323,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         if actions is None:
             advantages = None
             # latent_vf, _ = self._extract_latent(obs)
-            values = self.value_net(self.value_feature_extractor(obs))
+            values, _ = self.value_net(self.value_feature_extractor(obs)).min(1, keepdim = True)
             return values, advantages
         else:
             values, advantages, log_probs, entropy, ws = self.evaluate_actions(obs, actions, mu, log_std, noise)

@@ -211,7 +211,7 @@ class CustomPPO(OnPolicyAlgorithm):
 
         callback.on_rollout_start()
         for _ in range(n_rollout_steps):
-            self._last_obs = self._last_obs / 10.0 
+            # self._last_obs = self._last_obs / 10.0 
             with th.no_grad():
                 # Convert to pytorch tensor
                 obs_tensor = th.as_tensor(self._last_obs, device=self.device)
@@ -223,8 +223,8 @@ class CustomPPO(OnPolicyAlgorithm):
             mu = mu.cpu().numpy()
             # np.clip(actions, self.policy.action_space.low, self.policy.action_space.high)
             new_obs, rewards, dones, infos = env.step(
-                # actions
-                np.clip(actions, self.action_space.low, self.action_space.high)
+                actions
+                # np.clip(actions, self.action_space.low, self.action_space.high)
             )
             self.num_timesteps += env.num_envs
 
@@ -372,7 +372,7 @@ class CustomPPO(OnPolicyAlgorithm):
 
     def _compute_advantages_(self, raw_advantages):
         gamma_lambda = self.gamma * self.lambda_
-        gamma_lambda = self.gamma * self.lambda_ * (1 - self._current_progress_remaining)
+        # gamma_lambda = self.gamma * self.lambda_ * (1 - self._current_progress_remaining)
 
         lengths = [len(x) for x in raw_advantages]
         padded = th.nn.utils.rnn.pad_sequence(
@@ -391,10 +391,58 @@ class CustomPPO(OnPolicyAlgorithm):
             last = padded[:, t] + gamma_lambda * last
             last = last * mask[:, t]
             advantages[:, t] = last
+
         return advantages[mask]
 
+    # def _compute_advantages_(self, raw_advantages, value_bias, lengths):
+    #     gamma_lambda = self.gamma * self.lambda_
+    #     dones = th.zeros_like(raw_advantages)
+    #     lengths = th.tensor(lengths)
+    #     index = th.cumsum(lengths, dim=0) - 1
+    #     dones[index.to(raw_advantages.device)] = 0
+        
+    #     advantages = th.zeros_like(raw_advantages)
+    #     lastadvlam = 0
+    #     lastbiasfix = 0
+        
+    #     for t in reversed(range(lengths.sum())):
+    #         if t == raw_advantages.size(0) - 1:
+    #             advantages[t] = lastadvlam = raw_advantages[t]
+    #             # lastbiasfix = self.gamma * self.lambda_ * (value_bias[t] + lastbiasfix)
+    #         else:
+    #             advantages[t] = raw_advantages[t] + self.gamma * self.lambda_ * lastadvlam + value_bias[t] - (1 - self.lambda_) * self.gamma * lastbiasfix
+    #         lastadvlam = advantages[t]
+    #         lastbiasfix = self.gamma * self.lambda_ * (value_bias[t] + lastbiasfix)
+
+    #     return advantages
+        
         # return th.tensor(advantages).to(raw_advantages[0].device)
 
+    def compute_gae(self, rewards, values, last_values, lengths, gamma = 0.99, gae_lambda_coef = 0.95):
+        """
+        rewards shape is [B]
+        """
+        lengths = th.tensor(lengths)
+        last_values = th.tensor(last_values, dtype=th.float32)
+        next_values = th.zeros_like(values)
+        index = th.cumsum(lengths, dim=0) - 1
+        next_values[index.to(rewards.device)] = last_values.to(rewards.device)
+        mask = (next_values == 0)
+        mask[-1] = False
+        next_values[mask] = values[1:][mask[:-1]]
+        deltas = rewards + gamma * next_values - values
+        lastgaelam = 0.0
+        gae_advantages = th.zeros_like(rewards)
+        for t in range(rewards.shape[0]-1, -1, -1):
+            if t == rewards.shape[0]-1:
+                gae_advantages[t] = lastgaelam = deltas[t]
+            else:
+                gae_advantages[t] = deltas[t] + gamma * gae_lambda_coef * lastgaelam
+                lastgaelam = gae_advantages[t]
+        
+        return gae_advantages, deltas
+        
+        
 
     def _train_shared(self) -> None:
 
@@ -426,6 +474,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 last_values = data.last_values
                 lengths = data.lengths
                 advantages_ = data.advantages
+                target_values = data.values
                 # log_std = data.noises
 
                 (
@@ -473,7 +522,12 @@ class CustomPPO(OnPolicyAlgorithm):
                 # normalize adv
                 advantages_ = advantages.detach().clone()
                 # 累积过后是gae-like的形式，但是误差也会被累积
-                advantages_ = self._compute_advantages_(advantages_.split(lengths))
+                # advantages_ = self._compute_advantages_(advantages_.split(lengths))
+                # 利用values计算gae
+                # gae_advantages, td_error = self.compute_gae(
+                #     rewards, th.cat(values).detach().clone(), last_values, lengths
+                # )z
+                
                 if self.advantage_normalization:
                     advantages_norm = self._normalize_advantage(advantages_, policies = None)
 
@@ -560,10 +614,21 @@ class CustomPPO(OnPolicyAlgorithm):
         # add some metric to log.
         concat_values = th.concat(values, dim = -1)
         q_values = (concat_values + advantages).detach()
-        self.logger.record("adv/adv_mean", advantages_.cpu().mean().item())
-        self.logger.record("adv/adv_std", advantages_.cpu().std().item())
-        self.logger.record("adv/adv_max", advantages_.cpu().max().item())
-        self.logger.record("adv/adv_min", advantages_.cpu().min().item())
+
+        self.logger.record("adv/dae_adv_mean", advantages_.cpu().mean().item())
+        self.logger.record("adv/dae_adv_std", advantages_.cpu().std().item())
+        self.logger.record("adv/dae_adv_max", advantages_.cpu().max().item())
+        self.logger.record("adv/dae_adv_min", advantages_.cpu().min().item())
+
+        # self.logger.record("adv/adv_mean", advantages_gae_like.cpu().mean().item())
+        # self.logger.record("adv/adv_std", advantages_gae_like.cpu().std().item())
+        # self.logger.record("adv/adv_max", advantages_gae_like.cpu().max().item())
+        # self.logger.record("adv/adv_min", advantages_gae_like.cpu().min().item())
+
+        # self.logger.record("adv/gae_adv_mean", gae_advantages.cpu().mean().item())
+        # self.logger.record("adv/gae_adv_std", gae_advantages.cpu().std().item())
+        # self.logger.record("adv/gae_adv_max", gae_advantages.cpu().max().item())
+        # self.logger.record("adv/gae_adv_min", gae_advantages.cpu().min().item())
         
         self.logger.record("adv/abs_adv_mean", advantages_.abs().cpu().mean().item())
         self.logger.record("adv/abs_adv_std", advantages_.abs().cpu().std().item())
@@ -593,6 +658,23 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("weights/ws_mean", ws.detach().cpu().mean().item())
         self.logger.record("weights/ws_std", ws.detach().cpu().std().item())
         
+        # error = (advantages_ - td_error)**2
+        # self.logger.record("gae/td_error_mean", error.detach().cpu().mean().item())
+        # self.logger.record("gae/td_error_max", error.detach().cpu().max().item())
+        # self.logger.record("gae/td_error_min", error.detach().cpu().min().item())
+        # self.logger.record("gae/td_error_std", error.detach().cpu().std().item())
+        
+        # gae_error = (gae_advantages - advantages_gae_like)**2
+        # self.logger.record("gae/gae_error_mean", gae_error.detach().cpu().mean().item())
+        # self.logger.record("gae/gae_error_max", gae_error.detach().cpu().max().item())
+        # self.logger.record("gae/gae_error_min", gae_error.detach().cpu().min().item())
+        # self.logger.record("gae/gae_error_std", gae_error.detach().cpu().std().item())
+
+        # # 方向一致性
+        # td_consistence = ((advantages_ >= 0) * (td_error >= 0)).sum() / advantages_.shape[0]
+        # gae_consistence = ((gae_advantages >= 0) * (advantages_gae_like >= 0)).sum() / gae_advantages.shape[0]
+        # self.logger.record("consistence/td_consistence", td_consistence.detach().cpu().mean().item())
+        # self.logger.record("consistence/gae_consistence", gae_consistence.detach().cpu().mean().item())
         
                         
 
