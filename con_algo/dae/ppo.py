@@ -160,7 +160,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self.gl = self.gamma * self.lambda_
         self.discount_matrix = th.tensor(
             [
-                [0 if j < i else (self.gl) ** (j - i) for j in range(n_steps)]
+                [0 if j < i else (self.gamma) ** (j - i) for j in range(n_steps)]
                 for i in range(n_steps)
             ],
             dtype=th.float32,
@@ -169,7 +169,7 @@ class CustomPPO(OnPolicyAlgorithm):
         
         self.lambda_discount_matrix = th.tensor(
             [
-                [0 if j < i else (self.gl) ** (j - i) for j in range(n_steps)]
+                [0 if j < i else (self.gamma) ** (j - i) for j in range(n_steps)]
                 for i in range(n_steps)
             ],
             dtype=th.float32,
@@ -474,7 +474,7 @@ class CustomPPO(OnPolicyAlgorithm):
 
                 # normalize adv
                 advantages_ = advantages.detach().clone()
-                advantages_ = self._compute_advantages_(advantages_.split(lengths))
+                # advantages_ = self._compute_advantages_(advantages_.split(lengths))
                 if self.advantage_normalization:
                     advantages_norm = self._normalize_advantage(advantages_, policies = None)
 
@@ -498,7 +498,6 @@ class CustomPPO(OnPolicyAlgorithm):
                 loss = (
                     policy_loss
                     + self.ent_coef * entropy_loss
-                    + 0.01 * (- ex_f.mean())
                     + self.kl_coef * kl_loss
                     + self.vf_coef * value_loss
                     # + self.vf_coef * ex_f.pow(2).mean()
