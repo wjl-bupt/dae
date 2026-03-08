@@ -109,7 +109,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         #     nn.Tanh(),
         # )
 
-        self.actor_activate_func = nn.Tanh()
+        self.advantage_activate_func = nn.Tanh()
         self.activate_func = nn.Tanh()
 
         hidden_dim = 256
@@ -130,14 +130,18 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         )
         self.value_net = nn.Linear(hidden_dim, 1)
         self.advantage_feature_extractor = SimBaEncoder(
-            input_dim = self.observation_space.shape[0] + self.action_space.shape[0], block_num = 2,
-            hidden_dim = hidden_dim, activation = self.activate_func
+            input_dim = self.observation_space.shape[0], block_num = 2,
+            hidden_dim = hidden_dim, activation = self.advantage_activate_func,
         )
 
         self.advantage_net = nn.Sequential(
-            nn.Linear(hidden_dim , hidden_dim * 2),
-            self.activate_func,
+            nn.Linear(hidden_dim + self.action_space.shape[0] , hidden_dim * 2),
+            self.advantage_activate_func,
+            nn.Linear(hidden_dim * 2 , hidden_dim * 2),
+            self.advantage_activate_func,
             nn.Linear(hidden_dim * 2, self.action_space.shape[0]),
+            # 直接输出一个权重试一试：避免梯度爆炸
+            # nn.Linear(hidden_dim * 2, 1)
         )
         # self.ss = nn.Linear(hidden_dim, self.action_space.shape[0])
 
@@ -154,7 +158,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 self.advantage_feature_extractor : np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net : 1.0,
-                # self.advantage_net : 0.01,
+                self.advantage_net : 1.0,
             }
             for module, gain in module_gains.items():
                 module.apply(partial(self.init_weights, gain=gain))
@@ -243,19 +247,6 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
 
         return actions, mean_actions, log_policies, values, actions
 
-    def jacobian_single(self, latent_b, action_b):
-        return self.advantage_net(
-            th.cat([latent_b, self.action_feature_extractor(action_b)], dim=-1)
-        ).squeeze(-1)
-    
-    def calc_jacrevian_diag(self, latent_vf, actions: th.Tensor) -> th.Tensor:
-        jacrevian = vmap(self.jacobian_single)(
-            latent_vf, 
-            actions,
-        )
-        
-        return jacrevian
-
 
     def evaluate_actions(
         self, obs: th.Tensor, actions: th.Tensor, 
@@ -275,10 +266,11 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         
         actions_grad = actions.requires_grad_(True)
         # shape is [B, B, D]
-        latent_w = self.advantage_feature_extractor(th.cat([obs, actions_grad], dim = 1))
-        ws = self.advantage_net(latent_w)
+        latent_w = self.advantage_feature_extractor(obs)
+        ws = self.advantage_net(th.cat([latent_w, actions_grad], dim = 1))
         with th.no_grad():
             zs = - (actions - mu) / (th.exp(2 * log_std) + 1e-10)
+
         eps = th.rand_like(ws)
         inner = (ws * eps).sum()
         grad = th.autograd.grad(
@@ -286,12 +278,32 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             actions_grad,
             create_graph = True
         )[0]
-        div = (grad * eps).mean(dim = 1)
-        advantages = (ws * zs).mean(1) + div
+
+        div = (grad * eps).sum(dim = 1)
+        
+        # ws shape is [B, D]
+        # div = 0.0
+        # for i in range(actions.shape[1]):
+        #     grad = th.autograd.grad(
+        #         ws[:, i].sum(),
+        #         actions,
+        #         create_graph=True
+        #     )[0][:, i]
+
+        #     div += grad       
+
+        # div = th.autograd.grad(
+        #     ws.sum(),
+        #     actions_grad,
+        #     create_graph=True
+        # )[0]
+        # div = div.sum(dim = 1)
+
+        advantages = (ws * zs).sum(1) + div
         
         values = self.value_net(self.value_feature_extractor(obs))
         
-        return values, advantages, log_policies, entropy, ws, zs
+        return values, advantages, log_policies, entropy, ws, div
         # return values, advantages, log_probs, distribution.entropy()
     
     def evaluate_state(

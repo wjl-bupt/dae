@@ -223,8 +223,8 @@ class CustomPPO(OnPolicyAlgorithm):
             mu = mu.cpu().numpy()
             # np.clip(actions, self.policy.action_space.low, self.policy.action_space.high)
             new_obs, rewards, dones, infos = env.step(
-                actions
-                # np.clip(actions, self.action_space.low, self.action_space.high)
+                # actions
+                np.clip(actions, self.action_space.low, self.action_space.high)
             )
             self.num_timesteps += env.num_envs
 
@@ -370,29 +370,46 @@ class CustomPPO(OnPolicyAlgorithm):
 
         return loss, ratio
 
-    def _compute_advantages_(self, raw_advantages):
-        gamma_lambda = self.gamma * self.lambda_
+    def _compute_gae_like_advantages_(self, raw_advantages, lengths): 
+        # give a time coef 
+        gae_like_coef = self.gamma * (self.lambda_ * (1 - self._current_progress_remaining)) 
+        dones = th.zeros_like(raw_advantages) 
+        lengths = th.tensor(lengths) 
+        index = th.cumsum(lengths, dim=0) - 1 
+        dones[index.to(raw_advantages.device)] = 1 
+        gae_like_advantages = th.zeros_like(raw_advantages) 
+        gaelikelam = 0 
+        for t in reversed(range(lengths.sum())): 
+            gaelikelam = raw_advantages[t] + (1 - dones[t]) * gae_like_coef * gaelikelam 
+            gae_like_advantages[t] = gaelikelam 
+        
+        return gae_like_advantages
 
-        lengths = [len(x) for x in raw_advantages]
-        padded = th.nn.utils.rnn.pad_sequence(
-            raw_advantages,
-            batch_first=True
-        )
+    def _compute_td_error(self, rewards, values, target_values, last_values, lengths, gamma=0.99):
+        """
+        rewards:        (T,)
+        values:         (T,)
+        target_values:  (T,)
+        last_values:    (num_episodes,)
+        lengths:        list[num_episodes]
+        """
 
-        B, T = padded.shape
-        mask = th.arange(T, device=padded.device).expand(B, T) < \
-            th.tensor(lengths, device=padded.device).unsqueeze(1)
+        device = rewards.device
+        lengths = th.tensor(lengths, device=device)
+        last_values = th.tensor(last_values, dtype=th.float32, device=device)
+        T = rewards.shape[0]
+        # next state values
+        next_values = th.zeros_like(values)
+        # episode end index
+        end_idx = th.cumsum(lengths, dim=0) - 1
+        # 默认 next value = target_values[t+1]
+        next_values[:-1] = target_values[1:]
+        # episode 结束位置使用 last_values
+        next_values[end_idx] = last_values
+        # TD error
+        deltas = rewards + gamma * next_values - values
 
-        advantages = th.zeros_like(padded)
-        last = th.zeros(B, device=padded.device)
-
-        for t in reversed(range(T)):
-            last = padded[:, t] + gamma_lambda * last
-            last = last * mask[:, t]
-            advantages[:, t] = last
-        return advantages[mask]
-
-        # return th.tensor(advantages).to(raw_advantages[0].device)
+        return deltas
 
 
     def _train_shared(self) -> None:
@@ -427,6 +444,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 last_values = data.last_values
                 lengths = data.lengths
                 advantages_ = data.advantages
+                target_values = data.values
                 # log_std = data.noises
 
                 (
@@ -435,7 +453,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     log_policies,
                     entropy,
                     ws,
-                    ex_f,
+                    div,
                 ) = self.policy.evaluate_state(data.observations, actions, mu, log_std, log_std)
 
                 # value loss
@@ -474,7 +492,9 @@ class CustomPPO(OnPolicyAlgorithm):
 
                 # normalize adv
                 advantages_ = advantages.detach().clone()
-                # advantages_ = self._compute_advantages_(advantages_.split(lengths))
+                td_error = self._compute_td_error(rewards, th.cat(values), target_values, last_values, lengths, gamma = 0.99)
+                value_loss = 0.5 * (advantages - td_error).square().mean()
+                # advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
                 if self.advantage_normalization:
                     advantages_norm = self._normalize_advantage(advantages_, policies = None)
 
@@ -585,22 +605,27 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("Q_values/Q_values_max", q_values.detach().cpu().max().item())
         self.logger.record("Q_values/Q_values_min", q_values.detach().cpu().min().item())
 
-        self.logger.record("actions/actions_mean", (actions - mu).mean().item())
-        self.logger.record("actions/actions_max", (actions - mu).max().item())
-        self.logger.record("actions/actions_min", (actions - mu).min().item())
+        self.logger.record("actions/actions_mean", actions.mean().item())
+        self.logger.record("actions/actions_max", actions.max().item())
+        self.logger.record("actions/actions_min", actions.min().item())
+        self.logger.record("actions/actions_std", actions.std().item())
 
-        # self.logger.record("actions/mu_mean", self.rollout_buffer.mu.mean().item())
-        # self.logger.record("actions/mu_max", self.rollout_buffer.mu.max().item())
-        # self.logger.record("actions/mu_min", self.rollout_buffer.mu.min().item())
         
         self.logger.record("rewards/reward_mean", self.rollout_buffer.rewards.mean().item())
         self.logger.record("rewards/reward_max", self.rollout_buffer.rewards.max().item())
         self.logger.record("rewards/reward_min", self.rollout_buffer.rewards.min().item())
         
-        self.logger.record("probs/probs_max", ws.detach().cpu().max().item())
-        self.logger.record("probs/probs_min", ws.detach().cpu().min().item())
-        self.logger.record("probs/probs_mean", ws.detach().cpu().mean().item())
-        self.logger.record("probs/probs_std", ws.detach().cpu().std().item())
+        self.logger.record("weights/weights_max", ws.detach().cpu().max().item())
+        self.logger.record("weights/weights_min", ws.detach().cpu().min().item())
+        self.logger.record("weights/weights_mean", ws.detach().cpu().mean().item())
+        self.logger.record("weights/weights_std", ws.detach().cpu().std().item())
+        
+        self.logger.record("div/div_max", div.detach().cpu().max().item())
+        self.logger.record("div/div_mean", div.detach().cpu().mean().item())
+        self.logger.record("div/div_min", div.detach().cpu().min().item())
+        self.logger.record("div/div_std", div.detach().cpu().std().item())
+        
+        
         
         
                         
