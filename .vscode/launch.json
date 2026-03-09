@@ -45,11 +45,11 @@
             "args": [
                 "--algo", "PPO", 
                 "--hparam_file", "${workspaceFolder}/params/PPO_mujoco_debugger.yml", 
-                "--envs", "HalfCheetah-v5", 
+                "--envs", "Humanoid-v5", 
                 "--threads", "4",
                 "--continous",
                 // "--use_wandb",
-                "--logging",
+                // "--logging",
                 // "--project", "callback-test",
                 
             ],

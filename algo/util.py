@@ -213,6 +213,8 @@ class VecLogger(VecEnvWrapper):
 
         self.scores = []
         self.steps = 0
+        # NOTE(junweiluo): 增加一个参数来记录raw rewards
+        self.raw_scores = []
 
     def reset(self) -> VecEnvObs:
         obs = self.venv.reset()

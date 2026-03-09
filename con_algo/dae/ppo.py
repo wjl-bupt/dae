@@ -11,7 +11,8 @@
 from typing import Any, Dict, Optional, Type, Union
 from functools import partial
 
-
+import sys
+import time
 import numpy as np
 import torch as th
 import warnings
@@ -21,7 +22,7 @@ from torch.optim  import Adam
 from gymnasium import spaces
 from con_algo.dae.policy import CustomActorCriticPolicy
 from con_algo.dae.buffer import CustomBuffer
-
+from stable_baselines3.common.utils import obs_as_tensor, safe_mean
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
@@ -373,6 +374,7 @@ class CustomPPO(OnPolicyAlgorithm):
     def _compute_gae_like_advantages_(self, raw_advantages, lengths): 
         # give a time coef 
         gae_like_coef = self.gamma * (self.lambda_ * (1 - self._current_progress_remaining)) 
+        gae_like_coef = self.gamma * self.lambda_ 
         dones = th.zeros_like(raw_advantages) 
         lengths = th.tensor(lengths) 
         index = th.cumsum(lengths, dim=0) - 1 
@@ -460,10 +462,11 @@ class CustomPPO(OnPolicyAlgorithm):
                 values = values.flatten().split(lengths)
                 # self.dae_correction = False
                 if self.dae_correction:
+                    # - advantages
                     deltas = (
                         rewards - advantages
                     ).split(lengths)
-                    value_loss = self._value_loss(
+                    main_value_loss = self._value_loss(
                         deltas,
                         values, 
                         last_values
@@ -492,9 +495,11 @@ class CustomPPO(OnPolicyAlgorithm):
 
                 # normalize adv
                 advantages_ = advantages.detach().clone()
-                td_error = self._compute_td_error(rewards, th.cat(values), target_values, last_values, lengths, gamma = 0.99)
-                value_loss = 0.5 * (advantages - td_error).square().mean()
-                # advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
+                td_error = self._compute_td_error(rewards, target_values, target_values, last_values, lengths, gamma = 0.99)
+                td_loss = (advantages - td_error).square().mean()
+                td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
+                value_loss = main_value_loss
+                advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
                 if self.advantage_normalization:
                     advantages_norm = self._normalize_advantage(advantages_, policies = None)
 
@@ -546,7 +551,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     th.mean((th.abs(ratio - 1) > clip_range).float()).item()
                 )
                 pg_losses.append(policy_loss.item())
-                value_losses.append(value_loss.item())
+                value_losses.append(main_value_loss.item())
                 entropy_losses.append(-entropy.mean().item())
                 kl_divs.append(kl_loss.item())
                 gnorms.append(gnorm)
@@ -557,7 +562,7 @@ class CustomPPO(OnPolicyAlgorithm):
             # if kl_loss.mean().item() >= 0.05:
             #     break
             
-            self.policy.ema_ex_adv = self.policy.ema_ex_adv * self.policy.ema_coef + np.mean(ex_advs).item() * (1 - self.policy.ema_coef)
+            # self.policy.ema_ex_adv = self.policy.ema_ex_adv * self.policy.ema_coef + np.mean(ex_advs).item() * (1 - self.policy.ema_coef)
 
         # Logs
         self.logger.record("train/clip_range", clip_range)
@@ -579,7 +584,9 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("train/ratio_mean", ratio.detach().cpu().mean().item())
         # self.logger.record("train/trace", trace.cpu().mean().item())
         self.logger.record("train/log_std", log_std.mean().item())  
-        self.logger.record("train/std", log_std.exp().mean().item())  
+        self.logger.record("train/std", log_std.exp().mean().item()) 
+        self.logger.record("train/td_loss", td_loss.detach().cpu().mean().item())
+        self.logger.record("train/td_direct_corr", td_direct_corr.detach().cpu().mean().item())
         # self.logger.record("train/alpha", self.policy.log_alpha.exp().item()) 
 
         # add some metric to log.
@@ -851,3 +858,27 @@ class CustomPPO(OnPolicyAlgorithm):
             # eval_log_path=eval_log_path,
             reset_num_timesteps=reset_num_timesteps,
         )
+
+
+    def dump_logs(self, iteration: int = 0) -> None:
+        """
+        Write log.
+
+        :param iteration: Current logging iteration
+        """
+        assert self.ep_info_buffer is not None
+        assert self.ep_success_buffer is not None
+
+        time_elapsed = max((time.time_ns() - self.start_time) / 1e9, sys.float_info.epsilon)
+        fps = int((self.num_timesteps - self._num_timesteps_at_start) / time_elapsed)
+        if iteration > 0:
+            self.logger.record("time/iterations", iteration, exclude="tensorboard")
+        if len(self.ep_info_buffer) > 0 and len(self.ep_info_buffer[0]) > 0:
+            self.logger.record("rollout/ep_rew_mean", safe_mean([ep_info["r"] * 10.0 for ep_info in self.ep_info_buffer]))
+            self.logger.record("rollout/ep_len_mean", safe_mean([ep_info["l"] for ep_info in self.ep_info_buffer]))
+        self.logger.record("time/fps", fps)
+        self.logger.record("time/time_elapsed", int(time_elapsed), exclude="tensorboard")
+        self.logger.record("time/total_timesteps", self.num_timesteps, exclude="tensorboard")
+        if len(self.ep_success_buffer) > 0:
+            self.logger.record("rollout/success_rate", safe_mean(self.ep_success_buffer))
+        self.logger.dump(step=self.num_timesteps)

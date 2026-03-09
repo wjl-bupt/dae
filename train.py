@@ -23,23 +23,49 @@ import os
 import yaml
 import torch.nn as nn
 import gymnasium as gym
+
 from gymnasium.wrappers import (
     FlattenObservation, RecordEpisodeStatistics, ClipAction, 
     NormalizeObservation, TransformObservation,
-    NormalizeReward, TransformReward
+    NormalizeReward, TransformReward,
 )
-from con_algo.util import PeriodicCheckpointCallback, EvalCallback
+from gymnasium import Wrapper
+from con_algo.util import PeriodicCheckpointCallback
 from stable_baselines3.common.callbacks import CallbackList
+from stable_baselines3.common.monitor import Monitor
 
 
-class ClipActionWrapper(gym.ActionWrapper):
-    def action(self, action):
-        return np.clip(action, self.action_space.low, self.action_space.high)
+class ClipRewardWrapper(gym.RewardWrapper):
+    def reward(self, reward):
+        return np.clip(reward, -10.0, 10.0)
 
 class RewardNormalizationWrapper(gym.RewardWrapper):
     def reward(self, reward, reward_max = 10.0):
         return reward / 10.0
 
+
+class RawRewardMonitor(Wrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.raw_reward_sum = 0
+
+    def reset(self, **kwargs):
+        self.raw_reward_sum = 0.0
+        obs, info = self.env.reset(**kwargs)
+
+        # 保证字段存在
+        info["raw_r"] = 0.0
+        return obs, info
+
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+
+        self.raw_reward_sum += reward
+
+        # if done and "episode" in info:
+        info["raw_r"] = self.raw_reward_sum
+        print(f"raw_r is {info['raw_r']}")
+        return obs, reward, terminated, truncated, info
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -124,25 +150,43 @@ def get_default_hparam(args):
     print("Using default hyperparameters")
     return load_hparam(f"params/{args.algo}.yml")
 
+
+
+
+def custom_build_wrapper(raw_reward_monitor, reward_minmax_normalization):
+    def wrap(env):
+        # if raw_reward_monitor:
+        env = ClipRewardWrapper(env)
+        #     # env = Monitor(env, info_keywords=("raw_r",))
+        if reward_minmax_normalization:
+            env = RewardNormalizationWrapper(env)
+        
+        return env
+
+    return wrap
+
 # NOTE(junweiluo): add mujoco env maker
-def get_mujoco_env(e, envs, args, logdir):
-    if "HalfCheetah" in e:
-        clip_action_wrapper = ClipActionWrapper
+def get_mujoco_env(e, envs, args, logdir, rew_minmax_norm = False):
+    if rew_minmax_norm == True:
+        # 不使用rms归一化奖励
+        norm_reward = False
     else:
-        clip_action_wrapper = None
-    
+        norm_reward = True
+        
+    wrapper = custom_build_wrapper(raw_reward_monitor = True, reward_minmax_normalization = rew_minmax_norm)
     env = make_vec_env(
         env_id=e,
         n_envs=envs,
         seed=args.seed,
         vec_env_cls=CustomVecEnv,
         vec_env_kwargs=dict(threads=args.threads),
-        # wrapper_class=RewardNormalizationWrapper,
-        # env_kwargs=dict(render_mode=None), 
+        wrapper_class = wrapper,
     )
+    
     # env = ClipAction(env)
-    from stable_baselines3.common.vec_env import VecNormalize
-    env = VecNormalize(env, norm_obs=True, norm_reward=True)
+    from stable_baselines3.common.vec_env import VecNormalize, VecMonitor
+    env = VecMonitor(env)
+    env = VecNormalize(env, norm_obs=True, norm_reward=norm_reward, clip_reward=10.0)
     env = VecLogger(env, logdir)
     return env, 0
 
@@ -241,9 +285,13 @@ if __name__ == "__main__":
         cur_timestamp = int(time())
         logdir = f"./logs/{args.algo}/{_env}/{args.run_id}_seed{args.seed}_{time_str}_{cur_timestamp}" if args.logging else None
 
+        if args.algo == "CustomPPO":
+            rew_minmax_norm = True
+        elif args.algo == "PPO":
+            rew_minmax_norm = False
 
-        env, frameskip = get_env(_env, nenvs, args, logdir)
-        env = VecMonitor(env)
+        env, frameskip = get_env(_env, nenvs, args, logdir, rew_minmax_norm)
+        # env = VecMonitor(env)
         
         callbacks_list = []
         if args.use_wandb:
