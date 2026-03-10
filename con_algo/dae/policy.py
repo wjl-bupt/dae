@@ -270,8 +270,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         latent_w = self.advantage_feature_extractor(obs)
         ws = self.advantage_net(th.cat([latent_w, actions], dim = 1))
         with th.no_grad():
-            zs = - (actions - mu) 
-            sigma = th.exp(2 * log_std).unsqueeze(0)
+            zs = - (actions - mu) / th.exp(log_std)
+            sigma = th.exp(log_std).unsqueeze(0)
 
         # eps = th.rand_like(ws)
         # inner = (ws * eps).sum()
@@ -285,7 +285,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
 
         
         def f_single(x, w):
-            inp = th.cat([w.detach(), x], dim=-1)
+            inp = th.cat([w, x], dim=-1)
             return self.advantage_net(inp)
 
         # # with th.no_grad():
