@@ -362,7 +362,7 @@ if __name__ == "__main__":
         algo = algo_cls(
             policy, env, verbose=1, tensorboard_log=logdir, seed=args.seed, **hparam
         )
-
+        print(f"===== actor-critic arch ======\n{algo.policy}")
         algo.learn(args.steps, callback=callbacks_list)
         finish(env, algo, args.steps * frameskip)
         overall = np.mean(env.scores)
