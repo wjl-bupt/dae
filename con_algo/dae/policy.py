@@ -110,8 +110,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         #     nn.Tanh(),
         # )
 
-        self.advantage_activate_func = nn.Tanh()
-        self.activate_func = nn.Tanh()
+        self.advantage_activate_func = nn.SiLU()
+        self.activate_func = nn.SiLU()
 
         hidden_dim = 256
         self.actor_feature_extractor = nn.Sequential(
