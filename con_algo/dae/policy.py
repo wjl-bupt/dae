@@ -110,8 +110,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         #     nn.Tanh(),
         # )
 
-        self.advantage_activate_func = nn.SiLU()
-        self.activate_func = nn.SiLU()
+        self.advantage_activate_func = nn.Tanh()
+        self.activate_func = nn.Tanh()
 
         hidden_dim = 256
         self.actor_feature_extractor = nn.Sequential(
@@ -270,7 +270,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         latent_w = self.advantage_feature_extractor(obs)
         ws = self.advantage_net(th.cat([latent_w, actions], dim = 1))
         with th.no_grad():
-            zs = - (actions - mu) / (th.exp(2 * log_std) + 1e-10)
+            zs = - (actions - mu) 
+            sigma = th.exp(2 * log_std).unsqueeze(0)
 
         # eps = th.rand_like(ws)
         # inner = (ws * eps).sum()
@@ -300,7 +301,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # )[0]
         # div = div.sum(dim = 1)
 
-        advantages = (ws * zs + divs).mean(1) 
+        advantages = (ws * zs + sigma * divs).mean(1) 
         
         values = self.value_net(self.value_feature_extractor(obs))
         
