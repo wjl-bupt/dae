@@ -25,6 +25,7 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor, MlpExtr
 from copy import deepcopy
 from con_algo.util import DiagGaussianDistribution, layer_init, SimBaEncoder
 from torch.distributions import Normal, Categorical
+from torch.func import jacrev
 
 
 
@@ -109,7 +110,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         #     nn.Tanh(),
         # )
 
-        self.advantage_activate_func = nn.Tanh()
+        self.advantage_activate_func = nn.SiLU()
         self.activate_func = nn.Tanh()
 
         hidden_dim = 256
@@ -123,7 +124,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         )
         self.action_net = nn.Linear(hidden_dim, self.action_space.shape[0])
         # self.log_std = layer_init(nn.Linear(hidden_dim, self.action_space.shape[0]), std=0.01)
-        self.log_std = nn.Parameter(th.zeros(self.action_space.shape[0]))
+        self.log_std = nn.Parameter(th.zeros(self.action_space.shape[0]) * (-0.6931))
         self.value_feature_extractor = SimBaEncoder(
             input_dim = self.observation_space.shape[0], block_num = 2,
             hidden_dim = hidden_dim, activation = self.activate_func
@@ -267,30 +268,30 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         actions_grad = actions.requires_grad_(True)
         # shape is [B, B, D]
         latent_w = self.advantage_feature_extractor(obs)
-        ws = self.advantage_net(th.cat([latent_w, actions_grad], dim = 1))
+        ws = self.advantage_net(th.cat([latent_w, actions], dim = 1))
         with th.no_grad():
             zs = - (actions - mu) / (th.exp(2 * log_std) + 1e-10)
 
-        eps = th.rand_like(ws)
-        inner = (ws * eps).sum()
-        grad = th.autograd.grad(
-            inner,
-            actions_grad,
-            create_graph = True
-        )[0]
+        # eps = th.rand_like(ws)
+        # inner = (ws * eps).sum()
+        # grad = th.autograd.grad(
+        #     inner,
+        #     actions_grad,
+        #     create_graph = True,
+        # )[0]
 
-        div = (grad * eps).sum(dim = 1)
+        # div = (grad * eps).sum(dim = 1) 
+
         
-        # ws shape is [B, D]
-        # div = 0.0
-        # for i in range(actions.shape[1]):
-        #     grad = th.autograd.grad(
-        #         ws[:, i].sum(),
-        #         actions,
-        #         create_graph=True
-        #     )[0][:, i]
+        def f_single(x, w):
+            inp = th.cat([w.detach(), x], dim=-1)
+            return self.advantage_net(inp)
 
-        #     div += grad       
+        # # with th.no_grad():
+        J = vmap(jacrev(f_single))(actions, latent_w)  # [B,K,K]
+        # divs = J.squeeze(1)
+        divs = J.diagonal(dim1=1,dim2=2)
+        # divs = th.zeros_like(mu)
 
         # div = th.autograd.grad(
         #     ws.sum(),
@@ -299,11 +300,11 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # )[0]
         # div = div.sum(dim = 1)
 
-        advantages = (ws * zs).sum(1) + div
+        advantages = (ws * zs + divs).mean(1) 
         
         values = self.value_net(self.value_feature_extractor(obs))
         
-        return values, advantages, log_policies, entropy, ws, div
+        return values, advantages, log_policies, entropy, ws, divs
         # return values, advantages, log_probs, distribution.entropy()
     
     def evaluate_state(
@@ -346,7 +347,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             values = self.value_net(self.value_feature_extractor(obs))
             return values, advantages
         else:
-            values, advantages, log_probs, entropy, ws = self.evaluate_actions(obs, actions, mu, log_std, noise)
+            values, advantages, log_probs, entropy, ws, divs = self.evaluate_actions(obs, actions, mu, log_std, noise)
             # build \pi-centered advantage constrant
             # advantages = advantages - advantages_mu
             return values, advantages

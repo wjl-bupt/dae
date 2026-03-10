@@ -127,6 +127,7 @@ def load_hparam(hfile):
                 continue
             else:
                 hparam[k] = v
+    hparam['clip_range'] = 0.2
     if "features_extractor" in par:
         if hparam.get("policy_kwargs") is None:
             hparam["policy_kwargs"] = dict()
@@ -180,13 +181,13 @@ def get_mujoco_env(e, envs, args, logdir, rew_minmax_norm = False):
         seed=args.seed,
         vec_env_cls=CustomVecEnv,
         vec_env_kwargs=dict(threads=args.threads),
-        wrapper_class = wrapper,
+        # wrapper_class = wrapper,
     )
     
     # env = ClipAction(env)
     from stable_baselines3.common.vec_env import VecNormalize, VecMonitor
     env = VecMonitor(env)
-    env = VecNormalize(env, norm_obs=True, norm_reward=norm_reward, clip_reward=10.0)
+    env = VecNormalize(env, norm_obs=True, norm_reward=True, clip_reward=10.0)
     env = VecLogger(env, logdir)
     return env, 0
 

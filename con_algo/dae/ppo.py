@@ -365,9 +365,11 @@ class CustomPPO(OnPolicyAlgorithm):
             logp = log_policy
             old_logp = old_log_policy
             ratio = th.exp(logp - old_logp)
+            # NOTE(junweiluo): 尝试不再使用clip
             policy_loss_1 = adv * ratio
             policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
             loss = -th.min(policy_loss_1, policy_loss_2).mean()
+            
 
         return loss, ratio
 
@@ -395,6 +397,10 @@ class CustomPPO(OnPolicyAlgorithm):
         last_values:    (num_episodes,)
         lengths:        list[num_episodes]
         """
+        if len(values.shape) > 1:
+            values = values.squeeze(-1)
+        if len(target_values.shape) > 1:
+            target_values = target_values.squeeze(-1) 
 
         device = rewards.device
         lengths = th.tensor(lengths, device=device)
@@ -427,12 +433,15 @@ class CustomPPO(OnPolicyAlgorithm):
         gnorm_max, gnorm_min = 0, float("inf")
         q_values = []
         log_std = self.policy.log_std.detach()
-        
 
-        
+        # with th.no_grad():
+        #     self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size)        
+
+
         for epoch in range(self.n_epochs):
-            # with th.no_grad():
-            #     self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size)
+            with th.no_grad():
+                self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size)
+                self.rollout_buffer.update_value(self.policy, batch_size =self.batch_size)
             ex_advs = []
             # if self.advantage_normalization:
             #     self.rollout_buffer.advantages = (self.rollout_buffer.advantages - self.rollout_buffer.advantages.mean()) / (self.rollout_buffer.advantages.std() + 1e-8)
@@ -445,7 +454,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 rewards = data.rewards
                 last_values = data.last_values
                 lengths = data.lengths
-                advantages_ = data.advantages
+                old_advantages = data.advantages
                 target_values = data.values
                 # log_std = data.noises
 
@@ -471,22 +480,33 @@ class CustomPPO(OnPolicyAlgorithm):
                         values, 
                         last_values
                     )
+                    advantages_ = advantages.detach().clone()
+                    td_error = self._compute_td_error(rewards , th.cat(values), target_values, last_values, lengths, gamma = 0.99)
+                    td_loss = (advantages - td_error).square().mean()
+                    td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
+                    value_loss = main_value_loss
+                    advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
                 else:
-                    advs = advantages.split(lengths)
-                    # Q - V = A
-                    value_loss = th.cat(
-                        [
-                            (
-                                self.discount_matrix[: len(a), : len(a)].matmul(r)
-                                + l * self.discount_vector[-len(a) :]
-                                - a
-                                - v
-                            ).square()
-                            for r, a, v, l in zip(
-                                rewards.split(lengths), advs, values, last_values
-                            )
-                        ]
-                    ).mean()
+                    td_delta = self._compute_td_error(rewards , th.cat(values), target_values, last_values, lengths, gamma = 0.99)
+                    deltas = td_delta - advantages
+                    gae = th.zeros_like(rewards)
+                    gae_next = 0
+                    dones = th.zeros_like(advantages) 
+                    lengths = th.tensor(lengths) 
+                    index = th.cumsum(lengths, dim=0) - 1 
+                    dones[index.to(advantages.device)] = 1
+                    for t in reversed(range(len(deltas))):
+                        gae_next = deltas[t] + self.gamma * self.lambda_ * gae_next * (1 - dones[t])
+                        gae[t] = gae_next
+
+                    lambda_return = th.cat(values) + gae
+
+                    # ----- Value loss ----
+                    value_loss = ((gae) ** 2).mean()
+                    main_value_loss = value_loss
+                    td_loss = (advantages - td_delta).square().mean()
+                    td_direct_corr = ((advantages * td_delta) > 0).sum() / advantages.shape[0]
+                    advantages_ = gae.detach().clone()
 
                 # kl divergence
                 # kl_loss = (
@@ -494,12 +514,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 # )
 
                 # normalize adv
-                advantages_ = advantages.detach().clone()
-                td_error = self._compute_td_error(rewards, target_values, target_values, last_values, lengths, gamma = 0.99)
-                td_loss = (advantages - td_error).square().mean()
-                td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
-                value_loss = main_value_loss
-                advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
+
                 if self.advantage_normalization:
                     advantages_norm = self._normalize_advantage(advantages_, policies = None)
 
@@ -874,7 +889,7 @@ class CustomPPO(OnPolicyAlgorithm):
         if iteration > 0:
             self.logger.record("time/iterations", iteration, exclude="tensorboard")
         if len(self.ep_info_buffer) > 0 and len(self.ep_info_buffer[0]) > 0:
-            self.logger.record("rollout/ep_rew_mean", safe_mean([ep_info["r"] * 10.0 for ep_info in self.ep_info_buffer]))
+            self.logger.record("rollout/ep_rew_mean", safe_mean([ep_info["r"] for ep_info in self.ep_info_buffer]))
             self.logger.record("rollout/ep_len_mean", safe_mean([ep_info["l"] for ep_info in self.ep_info_buffer]))
         self.logger.record("time/fps", fps)
         self.logger.record("time/time_elapsed", int(time_elapsed), exclude="tensorboard")
