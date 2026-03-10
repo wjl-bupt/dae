@@ -307,7 +307,7 @@ if __name__ == "__main__":
             group_name = f"{args.algo}_{_env}_nheads{nheads}_fullact{use_full_action}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}"
 
             
-            wandb.init(
+            wandb_run = wandb.init(
                 project = args.project,
                 name = run_name,
                 group = group_name,
@@ -315,6 +315,12 @@ if __name__ == "__main__":
                 monitor_gym=True,
                 save_code=True,
             )
+            artifact = wandb.Artifact("con_algo", type = "code")
+            for root, dirs, files in os.walk("con_algo/dae"):
+                for f in files:
+                    if f.endswith(".py"):
+                        artifact.add_file(os.path.join(root, f))
+            wandb_run.log_artifact(artifact)
             wandb_callback = WandbCallback(
                 verbose=2,
             )
