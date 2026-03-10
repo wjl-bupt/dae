@@ -304,7 +304,7 @@ if __name__ == "__main__":
                 use_full_action = hparam['full_action']
                 nheads = hparam['nheads']
             run_name = f"{args.algo}_{_env}_seed{args.seed}_nheads{nheads}_fullact{use_full_action}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}_{time_str}_{cur_timestamp}"
-            group_name = f"{args.algo}_{_env}_nheads{nheads}_fullact{use_full_action}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}"
+            group_name = f"{args.algo}_{_env}_nheads{nheads}_fullact{use_full_action}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}_TanhBoth"
 
             
             wandb_run = wandb.init(
@@ -334,7 +334,7 @@ if __name__ == "__main__":
                 features_extractor_kwargs=dict(
                     block_num=2,
                     hidden_dim=256,
-                    activation=nn.SiLU(),
+                    activation=nn.Tanh(),
                 ),
                 net_arch=dict(pi=[], vf=[]), 
                 share_features_extractor=dict(),
