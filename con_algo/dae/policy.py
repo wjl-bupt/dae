@@ -159,7 +159,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 self.advantage_feature_extractor : np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net : 1.0,
-                self.advantage_net : 1.0,
+                self.advantage_net : 0.1,
             }
             for module, gain in module_gains.items():
                 module.apply(partial(self.init_weights, gain=gain))
@@ -289,7 +289,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             return self.advantage_net(inp)
 
         # # with th.no_grad():
-        J = vmap(jacrev(f_single))(actions, latent_w)  # [B,K,K]
+        J = vmap(jacrev(f_single))(actions, latent_w.detach())  # [B,K,K]
         # divs = J.squeeze(1)
         divs = J.diagonal(dim1=1,dim2=2)
         # divs = th.zeros_like(mu)

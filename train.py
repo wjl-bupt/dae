@@ -104,6 +104,7 @@ def get_args():
     
     # NOTE(junweiluo): mujoco implement
     parser.add_argument("--continous", default=False, action="store_true", help="continous task!")
+    parser.add_argument("--commit_id", default="commit_id", type=str, help="commit id in git")
     
     
     return parser.parse_args()
@@ -127,7 +128,7 @@ def load_hparam(hfile):
                 continue
             else:
                 hparam[k] = v
-    hparam['clip_range'] = 0.2
+    hparam['clip_range'] = 0.1
     if "features_extractor" in par:
         if hparam.get("policy_kwargs") is None:
             hparam["policy_kwargs"] = dict()
@@ -303,8 +304,9 @@ if __name__ == "__main__":
             else:
                 use_full_action = hparam['full_action']
                 nheads = hparam['nheads']
+            commit_id = args.commit_id
             run_name = f"{args.algo}_{_env}_seed{args.seed}_nheads{nheads}_fullact{use_full_action}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}_{time_str}_{cur_timestamp}"
-            group_name = f"{args.algo}_{_env}_nheads{nheads}_fullact{use_full_action}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}_TanhBoth_1"
+            group_name = f"{args.algo}_{_env}_nheads{nheads}_fullact{use_full_action}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}_{commit_id}"
 
             
             wandb_run = wandb.init(

@@ -3,8 +3,8 @@
 # ----------------------------
 # 配置参数
 # ----------------------------
-
 COMMIT_ID=$1
+
 
 ALGO="CustomPPO"
 HPARAM_FILE="/root/dae/params/CustomPPO_mujoco.yml"
@@ -16,11 +16,11 @@ PROJECT="mujoco-sb3-dae3"
 # Mujoco 环境列表
 ENVS=(
     
-    "Hopper-v5"
-    "HalfCheetah-v5"
-    "Ant-v5"
-    # "HumanoidStandup-v5"
-    "Swimmer-v5"
+    # "Hopper-v5"
+    # "HalfCheetah-v5"
+    # "Ant-v5"
+    # # "HumanoidStandup-v5"
+    # "Swimmer-v5"
     "InvertedPendulum-v5"
     "InvertedDoublePendulum-v5"
     "Walker2d-v5"

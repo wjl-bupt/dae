@@ -1,4 +1,4 @@
-batch_size: 256
+batch_size: 1024
 vf_coef: 0.5
 ent_coef: 0.0
 learning_rate:
@@ -6,5 +6,5 @@ learning_rate:
     final: 0
     ftype: "linear"
 n_epochs: 10
-n_steps: 128
-nenvs: 16
+n_steps: 64
+nenvs: 64

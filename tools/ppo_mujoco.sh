@@ -3,6 +3,8 @@
 # ----------------------------
 # 配置参数
 # ----------------------------
+COMMIT_ID=$1
+
 ALGO="PPO"
 HPARAM_FILE="/root/dae/params/PPO_mujoco.yml"
 THREADS=32
@@ -53,6 +55,7 @@ for ENV_ID in "${ENVS[@]}"; do
             --project $PROJECT \
             --seed $SEED \
             --run_id $SEED  \
+            --commit_id $COMMIT_ID \
             &
     done
     wait
