@@ -3,6 +3,7 @@ batch_size: 1024
 batch_size_vf: 1024
 ent_coef: 0.0
 full_action: false
+dae_discouple_correction: true
 kl_coef: 0.0
 vf_coef: 1.5
 learning_rate:

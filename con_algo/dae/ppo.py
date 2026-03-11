@@ -94,6 +94,7 @@ class CustomPPO(OnPolicyAlgorithm):
         advantage_normalization: bool = False,
         full_action: bool = True,
         dae_correction: bool = True,
+        dae_discouple_correction: bool = True,
         create_eval_env: bool = False,
         policy_kwargs: Optional[Dict[str, Any]] = dict(net_arch=[dict(pi=[64, 64], vf=[64, 64])], activation_fn=th.nn.Tanh,),
         verbose: int = 0,
@@ -156,7 +157,8 @@ class CustomPPO(OnPolicyAlgorithm):
             warnings.warn(
                 "Training with seperate actor/critic is deprecated, use at your own risk"
             )
-        self.dae_correction = dae_correction
+        # self.dae_correction = dae_correction
+        self.dae_discouple_correction = dae_discouple_correction
         self.lambda_ = 0.95
         self.gl = self.gamma * self.lambda_
         self.discount_matrix = th.tensor(
@@ -469,8 +471,9 @@ class CustomPPO(OnPolicyAlgorithm):
 
                 # value loss
                 values = values.flatten().split(lengths)
-                # self.dae_correction = False
-                if self.dae_correction:
+                
+                # origin loss
+                if self.dae_discouple_correction == False:
                     # - advantages
                     deltas = (
                         rewards - advantages
@@ -486,27 +489,27 @@ class CustomPPO(OnPolicyAlgorithm):
                     td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                     value_loss = main_value_loss
                     advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
+                # discouple loss
                 else:
-                    td_delta = self._compute_td_error(rewards , th.cat(values), target_values, last_values, lengths, gamma = 0.99)
-                    deltas = td_delta - advantages
-                    gae = th.zeros_like(rewards)
-                    gae_next = 0
-                    dones = th.zeros_like(advantages) 
-                    lengths = th.tensor(lengths) 
-                    index = th.cumsum(lengths, dim=0) - 1 
-                    dones[index.to(advantages.device)] = 1
-                    for t in reversed(range(len(deltas))):
-                        gae_next = deltas[t] + self.gamma * self.lambda_ * gae_next * (1 - dones[t])
-                        gae[t] = gae_next
-
-                    lambda_return = th.cat(values) + gae
-
-                    # ----- Value loss ----
-                    value_loss = ((gae) ** 2).mean()
-                    main_value_loss = value_loss
-                    td_loss = (advantages - td_delta).square().mean()
-                    td_direct_corr = ((advantages * td_delta) > 0).sum() / advantages.shape[0]
-                    advantages_ = gae.detach().clone()
+                    # discouple dae loss
+                    # 1. we train value network with dae-loss (advantage detach, value keep grad)
+                    #  \sum_{k=0}^{T-t-1} \gamma^{k}(r_{t+k} - \hat{A}_{t+k}.detach()) + \gamma^{T-t} V_{T-t+1} - V_{t}
+                    # 2. we add a regularization for td error: 
+                    #  (r_{t} + \gamma V_{t+1}^{target} - V_{t} - \hat{A}_{t})^2
+                    
+                    # calculate original dae loss with detach A(s,a)
+                    advantages_ = advantages.detach().clone()
+                    main_value_loss = self._value_loss(
+                        (rewards - advantages_).split(lengths),
+                        values,
+                        last_values,
+                    )
+                    # calculate a auxlimary regularization for td error
+                    td_error = self._compute_td_error(rewards , th.cat(values).detach(), target_values, last_values, lengths, gamma = 0.99)
+                    td_loss = (0.5 * (advantages - td_error)**2).mean()
+                    td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
+                    value_loss = main_value_loss + td_loss
+                    advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
 
                 # kl divergence
                 # kl_loss = (

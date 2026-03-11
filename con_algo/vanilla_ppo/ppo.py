@@ -48,10 +48,10 @@ class VanillaPPO(PPO):
         
         vf_max  = values.max().item()
         
-        self.logger.record("value/V_mean", vf_mean, self.num_timesteps)
-        self.logger.record("value/V_std", vf_std, self.num_timesteps)
-        self.logger.record("value/V_min", vf_min, self.num_timesteps)
-        self.logger.record("value/V_max", vf_max, self.num_timesteps)
+        self.logger.record("values/V_mean", vf_mean, self.num_timesteps)
+        self.logger.record("values/V_std", vf_std, self.num_timesteps)
+        self.logger.record("values/V_min", vf_min, self.num_timesteps)
+        self.logger.record("values/V_max", vf_max, self.num_timesteps)
         
         # add some metrics for actions statistics
         actions = self.rollout_buffer.actions
