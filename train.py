@@ -306,7 +306,7 @@ if __name__ == "__main__":
                 nheads = hparam['nheads']
             commit_id = args.commit_id
             run_name = f"{args.algo}_{_env}_seed{args.seed}_nheads{nheads}_fullact{use_full_action}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}_{time_str}_{cur_timestamp}"
-            group_name = f"{args.algo}_{_env}_nheads{nheads}_fullact{use_full_action}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}_{commit_id}"
+            group_name = f"{args.algo}_{_env}_nheads{nheads}_fullact{use_full_action}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}_{commit_id}_discouple{hparam['dae_discouple_correction']}"
 
             
             wandb_run = wandb.init(

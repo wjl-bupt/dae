@@ -499,14 +499,15 @@ class CustomPPO(OnPolicyAlgorithm):
                     
                     # calculate original dae loss with detach A(s,a)
                     advantages_ = advantages.detach().clone()
+                    values_detach = th.cat(values).detach()
                     main_value_loss = self._value_loss(
-                        (rewards - advantages_).split(lengths),
+                        (rewards - advantages).split(lengths),
                         values,
                         last_values,
                     )
                     # calculate a auxlimary regularization for td error
-                    td_error = self._compute_td_error(rewards , th.cat(values).detach(), target_values, last_values, lengths, gamma = 0.99)
-                    td_loss = (0.5 * (advantages - td_error)**2).mean()
+                    td_error = self._compute_td_error(rewards , th.cat(values), target_values, last_values, lengths, gamma = 0.99)
+                    td_loss = (0.5 * (old_advantages - td_error)**2).mean()
                     td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                     value_loss = main_value_loss + td_loss
                     advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)

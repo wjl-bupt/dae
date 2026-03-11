@@ -21,12 +21,12 @@ ENVS=(
     "Ant-v5"
     # "HumanoidStandup-v5"
     "Swimmer-v5"
-    "InvertedPendulum-v5"
-    "InvertedDoublePendulum-v5"
-    "Walker2d-v5"
-    "Reacher-v5"
-    "Pusher-v5"
-    "Humanoid-v5"
+    # "InvertedPendulum-v5"
+    # "InvertedDoublePendulum-v5"
+    # "Walker2d-v5"
+    # "Reacher-v5"
+    # "Pusher-v5"
+    # "Humanoid-v5"
 )
 
 
