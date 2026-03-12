@@ -130,10 +130,10 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             hidden_dim = hidden_dim, activation = self.activate_func
         )
         self.value_net = nn.Linear(hidden_dim, 1)
-        self.advantage_feature_extractor = SimBaEncoder(
-            input_dim = self.observation_space.shape[0], block_num = 2,
-            hidden_dim = hidden_dim, activation = self.advantage_activate_func,
-        )
+        # self.advantage_feature_extractor = SimBaEncoder(
+        #     input_dim = self.observation_space.shape[0], block_num = 2,
+        #     hidden_dim = hidden_dim, activation = self.advantage_activate_func,
+        # )
 
         self.advantage_net = nn.Sequential(
             nn.Linear(hidden_dim + self.action_space.shape[0] , hidden_dim * 2),
@@ -144,7 +144,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             # 直接输出一个权重试一试：避免梯度爆炸
             # nn.Linear(hidden_dim * 2, 1)
         )
-        self.bs = nn.Linear(hidden_dim, 1)
+        # self.bs = nn.Linear(hidden_dim, 1)
 
         # Init weights: use orthogonal initialization
         # with small initial weight for the output
@@ -156,7 +156,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             module_gains = {
                 self.actor_feature_extractor: np.sqrt(2),
                 self.value_feature_extractor: np.sqrt(2),
-                self.advantage_feature_extractor : np.sqrt(2),
+                # self.advantage_feature_extractor : np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net : 1.0,
                 self.advantage_net : 0.1,
@@ -267,11 +267,10 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         
         actions_grad = actions.requires_grad_(True)
         # shape is [B, B, D]
-        latent_w = self.advantage_feature_extractor(obs)
-        ws = self.advantage_net(th.cat([latent_w, actions], dim = 1))
+        latent_vf = self.value_feature_extractor(obs)
+        ws = self.advantage_net(th.cat([latent_vf, actions], dim = 1))
         with th.no_grad():
             zs = - (actions - mu) / th.exp(2 * log_std)
-            sigma = th.exp(log_std).unsqueeze(0)
 
         # eps = th.rand_like(ws)
         # inner = (ws * eps).sum()
@@ -289,7 +288,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             return self.advantage_net(inp)
 
         # # with th.no_grad():
-        J = vmap(jacrev(f_single))(actions, latent_w.detach())  # [B,K,K]
+        J = vmap(jacrev(f_single))(actions, latent_vf.detach())  # [B,K,K]
         # divs = J.squeeze(1)
         divs = J.diagonal(dim1=1,dim2=2)
         # divs = th.zeros_like(mu)
@@ -300,13 +299,12 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         #     create_graph=True
         # )[0]
         # div = div.sum(dim = 1)
-
-        bs = self.bs(latent_w).squeeze(-1)
-        advantages = (ws * zs + divs).mean(1)  + bs
+        # bs = self.bs(latent_vf).squeeze(-1)
+        advantages = (ws * zs + divs).mean(1) 
         
-        values = self.value_net(self.value_feature_extractor(obs))
+        values = self.value_net(latent_vf)
         
-        return values, advantages, log_policies, entropy, ws, bs
+        return values, advantages, log_policies, entropy, ws, divs
         # return values, advantages, log_probs, distribution.entropy()
     
     def evaluate_state(
