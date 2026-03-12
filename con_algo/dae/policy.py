@@ -144,7 +144,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             # 直接输出一个权重试一试：避免梯度爆炸
             # nn.Linear(hidden_dim * 2, 1)
         )
-        # self.ss = nn.Linear(hidden_dim, self.action_space.shape[0])
+        self.bs = nn.Linear(hidden_dim, 1)
 
         # Init weights: use orthogonal initialization
         # with small initial weight for the output
@@ -301,7 +301,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # )[0]
         # div = div.sum(dim = 1)
 
-        advantages = (ws * zs + divs).mean(1) 
+        bs = self.bs(latent_w)
+        advantages = (ws * zs + divs).mean(1)  + bs
         
         values = self.value_net(self.value_feature_extractor(obs))
         
