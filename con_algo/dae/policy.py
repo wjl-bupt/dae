@@ -301,12 +301,12 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # )[0]
         # div = div.sum(dim = 1)
 
-        bs = self.bs(latent_w)
+        bs = self.bs(latent_w).squeeze(-1)
         advantages = (ws * zs + divs).mean(1)  + bs
         
         values = self.value_net(self.value_feature_extractor(obs))
         
-        return values, advantages, log_policies, entropy, ws, divs
+        return values, advantages, log_policies, entropy, ws, bs
         # return values, advantages, log_probs, distribution.entropy()
     
     def evaluate_state(
