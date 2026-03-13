@@ -304,32 +304,40 @@ class CustomPPO(OnPolicyAlgorithm):
 
         return (advantages - advantages.mean() ) / (advantages.std() + eps)
 
-    def _value_loss(self, deltas, values, lasts):
-        # traj_level_loss = [
+    def _value_loss(self, rewards, values, lasts, advantages):
+        # windows k
+        losses = []
+        self.K = 8
+        for r, v, l, a in zip(rewards, values, lasts, advantages):
+            length = len(r)
+            d = r - a
+            hybrid = th.cat(
+                [
+                    d[:self.K],
+                    r[self.K:length]
+                ]
+            )
+            target = (
+                self.discount_matrix[:length, :length].matmul(hybrid)
+                + l * self.discount_vector[-length:]
+            )
+
+            losses.append((target - v).square())
+        return th.cat(losses).mean()
+        
+        
+        # loss = th.cat(
+        #     [
         #         (
         #             self.discount_matrix[: len(d), : len(d)].matmul(d)
         #             + l * self.discount_vector[-len(d) :]
         #             - v
-        #         ).square().unsqueeze(-1)
+        #         ).square()
         #         for d, v, l in zip(deltas, values, lasts)
-        # ]
-        # traj_sum = list(map(sum, traj_level_loss))
-        # loss = th.cat(traj_sum).mean()
-        
+        #     ]
+        # ).mean()
+
         # return loss
-
-        loss = th.cat(
-            [
-                (
-                    self.discount_matrix[: len(d), : len(d)].matmul(d)
-                    + l * self.discount_vector[-len(d) :]
-                    - v
-                ).square()
-                for d, v, l in zip(deltas, values, lasts)
-            ]
-        ).mean()
-
-        return loss
 
     def _policy_loss(
         self, advantages, log_policy, old_log_policy, actions, clip_range=None
@@ -374,6 +382,25 @@ class CustomPPO(OnPolicyAlgorithm):
             
 
         return loss, ratio
+
+    # 卷积版本
+    def _compute_kstep_advantages_(self, raw_advantages, K = 8):
+
+        coef = self.gamma * self.lambda_
+        # self.K = 8
+        device = raw_advantages[0].device
+
+        kernel = (coef ** th.arange(K, device=device)).flip(0).view(1,1,K)
+
+        out = []
+
+        for seq in raw_advantages:
+            seq = seq.view(1,1,-1)
+            seq = th.nn.functional.pad(seq, (0, K-1))
+            adv = th.nn.functional.conv1d(seq, kernel)
+            out.append(adv.view(-1))
+
+        return th.cat(out)
 
     def _compute_gae_like_advantages_(self, raw_advantages, lengths): 
         # give a time coef 
@@ -478,17 +505,24 @@ class CustomPPO(OnPolicyAlgorithm):
                     deltas = (
                         rewards - advantages
                     ).split(lengths)
+                    # main_value_loss = self._value_loss(
+                    #     deltas,
+                    #     values, 
+                    #     last_values
+                    # )
                     main_value_loss = self._value_loss(
-                        deltas,
-                        values, 
-                        last_values
+                        rewards.split(lengths),
+                        values,
+                        last_values,
+                        advantages.split(lengths),
                     )
                     advantages_ = advantages.detach().clone()
                     td_error = self._compute_td_error(rewards , th.cat(values), target_values, last_values, lengths, gamma = 0.99)
                     td_loss = (advantages - td_error).square().mean()
                     td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                     value_loss = main_value_loss
-                    advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
+                    # advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
+                    advantages_ = self._compute_kstep_advantages_(raw_advantages = advantages_)
                 # discouple loss
                 else:
                     # discouple dae loss
