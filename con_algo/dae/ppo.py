@@ -307,7 +307,7 @@ class CustomPPO(OnPolicyAlgorithm):
     def _value_loss(self, rewards, values, lasts, advantages):
         # windows k
         losses = []
-        self.K = 8
+        self.K = 16
         for r, v, l, a in zip(rewards, values, lasts, advantages):
             length = len(r)
             d = r - a
@@ -384,7 +384,7 @@ class CustomPPO(OnPolicyAlgorithm):
         return loss, ratio
 
     # 卷积版本
-    def _compute_kstep_advantages_(self, raw_advantages, K = 8):
+    def _compute_kstep_advantages_(self, raw_advantages, K = 16):
 
         coef = self.gamma * self.lambda_
         # self.K = 8
