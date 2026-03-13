@@ -501,6 +501,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     value_loss = main_value_loss + td_loss
                     advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
 
+                
                 # kl divergence
                 # kl_loss = (
                 #     (old_policies * (old_log_policies - log_policies)).sum(dim=1).mean()
@@ -596,6 +597,17 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("train/td_loss", td_loss.detach().cpu().mean().item())
         self.logger.record("train/td_direct_corr", td_direct_corr.detach().cpu().mean().item())
         self.logger.record("train/rew_adv_delta", th.cat(deltas).detach().cpu().mean().item())
+        # advantage & td error correction
+        # corr = th.corrcoef(th.stack([advantages, td_error]))[0,1]
+        td_error_norm = (td_error - td_error.mean()) / (td_error.std() + 1e-8)
+        advantages_norm_ = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        corr = (td_error_norm * advantages_norm_).mean()
+        self.logger.record("train/corr", corr.detach().cpu().mean().item())
+        self.logger.record("td/td_error_mean", td_error.detach().cpu().mean().item())
+        self.logger.record("td/td_error_max", td_error.detach().cpu().max().item())
+        self.logger.record("td/td_error_min", td_error.detach().cpu().min().item())
+        self.logger.record("td/td_error_std", td_error.detach().cpu().std().item())
+        
         # self.logger.record("train/alpha", self.policy.log_alpha.exp().item()) 
 
         # add some metric to log.

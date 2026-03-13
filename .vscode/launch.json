@@ -33,7 +33,11 @@
                 // "--logging",
                 // "--project", "callback-test",
                 
-            ]
+            ],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "2",
+            }
+            
         },
 
         {
