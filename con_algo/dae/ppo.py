@@ -305,19 +305,6 @@ class CustomPPO(OnPolicyAlgorithm):
         return (advantages - advantages.mean() ) / (advantages.std() + eps)
 
     def _value_loss(self, deltas, values, lasts):
-        # traj_level_loss = [
-        #         (
-        #             self.discount_matrix[: len(d), : len(d)].matmul(d)
-        #             + l * self.discount_vector[-len(d) :]
-        #             - v
-        #         ).square().unsqueeze(-1)
-        #         for d, v, l in zip(deltas, values, lasts)
-        # ]
-        # traj_sum = list(map(sum, traj_level_loss))
-        # loss = th.cat(traj_sum).mean()
-        
-        # return loss
-
         loss = th.cat(
             [
                 (
@@ -507,7 +494,8 @@ class CustomPPO(OnPolicyAlgorithm):
                         last_values,
                     )
                     # calculate a auxlimary regularization for td error
-                    td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = 0.99)
+                    # don't optimizer combine loss
+                    td_error = self._compute_td_error(rewards , th.cat(values).detach(), target_values, last_values, lengths, gamma = 0.99)
                     td_loss = (0.5 * (advantages - td_error).square()).mean()
                     td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                     value_loss = main_value_loss + td_loss
