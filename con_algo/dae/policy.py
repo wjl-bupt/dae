@@ -136,11 +136,13 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # )
 
         self.advantage_net = nn.Sequential(
-            nn.Linear(hidden_dim + self.action_space.shape[0] , hidden_dim * 2),
+            nn.Linear(hidden_dim + self.action_space.shape[0] , hidden_dim * 4),
             self.advantage_activate_func,
-            nn.Linear(hidden_dim * 2 , hidden_dim * 2),
+            nn.Linear(hidden_dim * 4 , hidden_dim * 4),
             self.advantage_activate_func,
-            nn.Linear(hidden_dim * 2, self.action_space.shape[0]),
+            nn.Linear(hidden_dim * 4 , hidden_dim * 4),
+            self.advantage_activate_func,
+            nn.Linear(hidden_dim * 4, self.action_space.shape[0]),
             # 直接输出一个权重试一试：避免梯度爆炸
             # nn.Linear(hidden_dim * 2, 1)
         )

@@ -606,6 +606,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("train/std", log_std.exp().mean().item()) 
         self.logger.record("train/td_loss", td_loss.detach().cpu().mean().item())
         self.logger.record("train/td_direct_corr", td_direct_corr.detach().cpu().mean().item())
+        self.logger.record("train/rew_adv_delta", th.cat(deltas).detach().cpu().mean().item())
         # self.logger.record("train/alpha", self.policy.log_alpha.exp().item()) 
 
         # add some metric to log.
@@ -631,10 +632,10 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("Q_values/Q_values_max", q_values.detach().cpu().max().item())
         self.logger.record("Q_values/Q_values_min", q_values.detach().cpu().min().item())
 
-        self.logger.record("actions/actions_mean", actions.mean().item())
-        self.logger.record("actions/actions_max", actions.max().item())
-        self.logger.record("actions/actions_min", actions.min().item())
-        self.logger.record("actions/actions_std", actions.std().item())
+        self.logger.record("actions/actions_mean", self.rollout_buffer.actions.mean().item())
+        self.logger.record("actions/actions_max", self.rollout_buffer.actions.max().item())
+        self.logger.record("actions/actions_min", self.rollout_buffer.actions.min().item())
+        self.logger.record("actions/actions_std", self.rollout_buffer.actions.std().item())
 
         
         self.logger.record("rewards/reward_mean", self.rollout_buffer.rewards.mean().item())
@@ -650,8 +651,6 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("div/div_mean", div.detach().cpu().mean().item())
         self.logger.record("div/div_min", div.detach().cpu().min().item())
         self.logger.record("div/div_std", div.detach().cpu().std().item())
-        
-        
         
         
                         
