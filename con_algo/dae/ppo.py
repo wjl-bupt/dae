@@ -428,9 +428,9 @@ class CustomPPO(OnPolicyAlgorithm):
 
 
         for epoch in range(self.n_epochs):
-            with th.no_grad():
-                self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size)
-                self.rollout_buffer.update_value(self.policy, batch_size =self.batch_size)
+            # with th.no_grad():
+            #     self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size)
+            #     self.rollout_buffer.update_value(self.policy, batch_size =self.batch_size)
             ex_advs = []
             # if self.advantage_normalization:
             #     self.rollout_buffer.advantages = (self.rollout_buffer.advantages - self.rollout_buffer.advantages.mean()) / (self.rollout_buffer.advantages.std() + 1e-8)
@@ -467,11 +467,11 @@ class CustomPPO(OnPolicyAlgorithm):
                     ).split(lengths)
                     main_value_loss = self._value_loss(
                         deltas,
-                        values, 
+                        values,
                         last_values
                     )
                     advantages_ = advantages.detach().clone()
-                    td_error = self._compute_td_error(rewards , th.cat(values), target_values, last_values, lengths, gamma = 0.99)
+                    td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = 0.99)
                     td_loss = (advantages - td_error).square().mean()
                     td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                     value_loss = main_value_loss
@@ -486,18 +486,23 @@ class CustomPPO(OnPolicyAlgorithm):
                     
                     # calculate original dae loss with detach A(s,a)
                     advantages_ = advantages.detach().clone()
-                    values_detach = th.cat(values).detach()
                     deltas = (rewards - advantages).split(lengths)
+                    # pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.1, 0.1)
                     main_value_loss = self._value_loss(
                         deltas,
                         values,
-                        last_values,
+                        # pred_values.flatten().split(lengths), 
+                        last_values
                     )
                     # calculate a auxlimary regularization for td error
                     # don't optimizer combine loss
-                    td_error = self._compute_td_error(rewards , th.cat(values).detach(), target_values, last_values, lengths, gamma = 0.99)
-                    td_loss = (0.5 * (advantages - td_error).square()).mean()
+                    td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = 0.99)
+                    td_error_norm = td_error  /(td_error.std().detach() + 1e-10)
+                    # td_loss = (0.5 * (advantages - td_error_norm).square()).mean()
+                    td_loss = (0.5 * (advantages - td_error_norm).square()).mean()
+                    # td_loss = th.nn.functional.huber_loss(advantages_norm_, td_error_norm, delta = 1.0).mean()
                     td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
+                    # 0.2 * td_error.var()  - 0.1 * advantages.var()
                     value_loss = main_value_loss + td_loss
                     advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
 
@@ -599,10 +604,8 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("train/rew_adv_delta", th.cat(deltas).detach().cpu().mean().item())
         # advantage & td error correction
         # corr = th.corrcoef(th.stack([advantages, td_error]))[0,1]
-        td_error_norm = (td_error - td_error.mean()) / (td_error.std() + 1e-8)
-        advantages_norm_ = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-        corr = (td_error_norm * advantages_norm_).mean()
-        self.logger.record("train/corr", corr.detach().cpu().mean().item())
+
+        # self.logger.record("train/corr", corr.detach().cpu().mean().item())
         self.logger.record("td/td_error_mean", td_error.detach().cpu().mean().item())
         self.logger.record("td/td_error_max", td_error.detach().cpu().max().item())
         self.logger.record("td/td_error_min", td_error.detach().cpu().min().item())

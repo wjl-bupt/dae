@@ -5,6 +5,7 @@ clip_range:
     ftype: "linear"
 vf_coef: 0.5
 ent_coef: 0.01
+clip_range_vf: 0.2
 learning_rate:
     init: 0.00025
     final: 0
