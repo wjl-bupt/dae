@@ -142,6 +142,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             # 直接输出一个权重试一试：避免梯度爆炸
             # nn.Linear(hidden_dim * 2, 1)
         )
+        # self.log_sigma_state = nn.Linear(hidden_dim, 1)
         # self.bs = nn.Linear(hidden_dim, 1)
 
         # Init weights: use orthogonal initialization
@@ -158,6 +159,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 self.action_net: 0.01,
                 self.value_net : 1.0,
                 self.advantage_net : 0.1,
+                # self.log_sigma_state: 0.01,
             }
             for module, gain in module_gains.items():
                 module.apply(partial(self.init_weights, gain=gain))
@@ -301,6 +303,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         advantages = (ws * zs + divs).mean(1) 
         
         values = self.value_net(latent_vf)
+        # sigma_state = self.log_sigma_state(latent_vf).exp().squeeze(-1)
         
         return values, advantages, log_policies, entropy, ws, divs
         # return values, advantages, log_probs, distribution.entropy()

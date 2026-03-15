@@ -305,16 +305,34 @@ class CustomPPO(OnPolicyAlgorithm):
         return (advantages - advantages.mean() ) / (advantages.std() + eps)
 
     def _value_loss(self, deltas, values, lasts):
-        loss = th.cat(
+        # loss = th.cat(
+        #     [
+        #         (
+        #             self.discount_matrix[: len(d), : len(d)].matmul(d)
+        #             + l * self.discount_vector[-len(d) :]
+        #             - v
+        #         ).square()
+        #         for d, v, l in zip(deltas, values, lasts)
+        #     ]
+        # )
+
+        residuals = th.cat(
             [
                 (
                     self.discount_matrix[: len(d), : len(d)].matmul(d)
                     + l * self.discount_vector[-len(d) :]
                     - v
-                ).square()
+                )
                 for d, v, l in zip(deltas, values, lasts)
             ]
-        ).mean()
+        )
+
+        loss = th.nn.functional.huber_loss(
+            residuals,
+            th.zeros_like(residuals),
+            delta=1.0,
+            reduction="mean"
+        )
 
         return loss
 
@@ -494,16 +512,16 @@ class CustomPPO(OnPolicyAlgorithm):
                         # pred_values.flatten().split(lengths), 
                         last_values
                     )
+                    main_value_loss = (main_value_loss / (div.pow(2) + 1e-10) + 2  * div.log()).mean()
                     # calculate a auxlimary regularization for td error
                     # don't optimizer combine loss
                     td_error = self._compute_td_error(rewards , th.cat(values).detach(), target_values, last_values, lengths, gamma = 0.99)
-                    td_error_norm = td_error  /(td_error.std().detach() + 1e-10)
-                    # td_loss = (0.5 * (advantages - td_error_norm).square()).mean()
-                    td_loss = (0.5 * (advantages - td_error_norm).square()).mean()
+                    
+                    td_loss = (0.5 * (advantages - td_error).square()).mean()
                     # td_loss = th.nn.functional.huber_loss(advantages_norm_, td_error_norm, delta = 1.0).mean()
                     td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                     # 0.2 * td_error.var()  - 0.1 * advantages.var()
-                    value_loss = main_value_loss + td_loss
+                    value_loss = main_value_loss
                     advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
 
                 
@@ -656,6 +674,29 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("div/div_min", div.detach().cpu().min().item())
         self.logger.record("div/div_std", div.detach().cpu().std().item())
         
+        # 计算一下value network的评估是否准确
+        targets = []
+        preds = []
+
+        for d, v, l in zip(deltas, values, last_values):
+
+            target = (
+                self.discount_matrix[:len(d), :len(d)].matmul(d)
+                + l * self.discount_vector[-len(d):]
+            )
+
+            targets.append(target)
+            preds.append(v)
+
+        targets = th.cat(targets)
+        preds = th.cat(preds)
+
+        var_y = th.var(targets)
+        if var_y < 1e-8:
+            var_y =  th.tensor(0.0)
+
+        explain_var =  1 - th.var(targets - preds) / var_y  
+        self.logger.record("train/explained_variance", explain_var.cpu().mean().item())
         
                         
 
