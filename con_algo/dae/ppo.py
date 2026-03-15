@@ -496,7 +496,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     )
                     # calculate a auxlimary regularization for td error
                     # don't optimizer combine loss
-                    td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = 0.99)
+                    td_error = self._compute_td_error(rewards , th.cat(values).detach(), target_values, last_values, lengths, gamma = 0.99)
                     td_error_norm = td_error  /(td_error.std().detach() + 1e-10)
                     # td_loss = (0.5 * (advantages - td_error_norm).square()).mean()
                     td_loss = (0.5 * (advantages - td_error_norm).square()).mean()
