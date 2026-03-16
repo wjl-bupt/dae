@@ -518,12 +518,13 @@ class CustomPPO(OnPolicyAlgorithm):
                         last_values
                     )
                     main_value_loss = main_value_loss.mean()
+                    next_advantages = self.gamma * self.lambda_ * th.roll(advantages, -1)
+                    next_advantages[th.cumsum(th.tensor(lengths), 0) - 1] = 0
                     # main_value_loss = (main_value_loss / (div.pow(2) + 1e-10) + 2  * div.log()).mean()
                     # calculate a auxlimary regularization for td error
                     # don't optimizer combine loss
                     td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = self.gamma)
-                    
-                    td_loss = (0.5 * (advantages - td_error).square()).mean()
+                    td_loss = (0.5 * (advantages - next_advantages - td_error).square()).mean()
                     # td_loss = th.nn.functional.huber_loss(advantages_norm_, td_error_norm, delta = 1.0).mean()
                     td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                     # 0.2 * td_error.var()  - 0.1 * advantages.var()
