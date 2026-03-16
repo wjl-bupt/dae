@@ -11,7 +11,7 @@ HPARAM_FILE="/root/dae/params/CustomPPO_mujoco.yml"
 THREADS=32
 LOGGING="--logging"
 USE_WANDB="--use_wandb"
-PROJECT="mujoco-sb3-dae3"
+PROJECT="mujoco-sb3-dae5"
 
 # Mujoco 环境列表
 ENVS=(
@@ -21,12 +21,12 @@ ENVS=(
     "Ant-v5"
     # "HumanoidStandup-v5"
     "Swimmer-v5"
-    # "InvertedPendulum-v5"
-    # "InvertedDoublePendulum-v5"
-    # "Walker2d-v5"
-    # "Reacher-v5"
-    # "Pusher-v5"
-    # "Humanoid-v5"
+    "InvertedPendulum-v5"
+    "InvertedDoublePendulum-v5"
+    "Walker2d-v5"
+    "Reacher-v5"
+    "Pusher-v5"
+    "Humanoid-v5"
 )
 
 

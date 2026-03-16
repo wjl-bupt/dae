@@ -441,8 +441,8 @@ class CustomPPO(OnPolicyAlgorithm):
         q_values = []
         log_std = self.policy.log_std.detach()
 
-        # with th.no_grad():
-        #     self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size)        
+        with th.no_grad():
+            self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size)        
 
 
         for epoch in range(self.n_epochs):
@@ -477,20 +477,22 @@ class CustomPPO(OnPolicyAlgorithm):
                 # value loss
                 values = values.flatten().split(lengths)
                 
+                
                 # origin loss
                 if self.dae_discouple_correction == False:
                     # - advantages
                     deltas = (
                         rewards - advantages
                     ).split(lengths)
+                    pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
                     main_value_loss = self._value_loss(
                         deltas,
-                        values,
+                        pred_values.flatten().split(lengths),
                         last_values
                     )
                     advantages_ = advantages.detach().clone()
                     td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = 0.99)
-                    td_loss = (advantages - td_error).square().mean()
+                    td_loss = 0.5 * (advantages - td_error).square().mean()
                     td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                     value_loss = main_value_loss
                     advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
@@ -504,7 +506,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     
                     # calculate original dae loss with detach A(s,a)
                     advantages_ = advantages.detach().clone()
-                    deltas = (rewards - advantages).split(lengths)
+                    deltas = (rewards - old_advantages).split(lengths)
                     # pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.1, 0.1)
                     main_value_loss = self._value_loss(
                         deltas,
@@ -512,16 +514,17 @@ class CustomPPO(OnPolicyAlgorithm):
                         # pred_values.flatten().split(lengths), 
                         last_values
                     )
-                    main_value_loss = (main_value_loss / (div.pow(2) + 1e-10) + 2  * div.log()).mean()
+                    main_value_loss = main_value_loss.mean()
+                    # main_value_loss = (main_value_loss / (div.pow(2) + 1e-10) + 2  * div.log()).mean()
                     # calculate a auxlimary regularization for td error
                     # don't optimizer combine loss
-                    td_error = self._compute_td_error(rewards , th.cat(values).detach(), target_values, last_values, lengths, gamma = 0.99)
+                    td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = self.gamma)
                     
                     td_loss = (0.5 * (advantages - td_error).square()).mean()
                     # td_loss = th.nn.functional.huber_loss(advantages_norm_, td_error_norm, delta = 1.0).mean()
                     td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                     # 0.2 * td_error.var()  - 0.1 * advantages.var()
-                    value_loss = main_value_loss
+                    value_loss = main_value_loss + td_loss
                     advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
 
                 
