@@ -172,7 +172,7 @@ class CustomPPO(OnPolicyAlgorithm):
         
         self.lambda_discount_matrix = th.tensor(
             [
-                [0 if j < i else (self.gamma) ** (j - i) for j in range(n_steps)]
+                [0 if j < i else (self.gamma * self.lambda_) ** (j - i) for j in range(n_steps)]
                 for i in range(n_steps)
             ],
             dtype=th.float32,
@@ -304,35 +304,36 @@ class CustomPPO(OnPolicyAlgorithm):
 
         return (advantages - advantages.mean() ) / (advantages.std() + eps)
 
-    def _value_loss(self, deltas, values, lasts):
-        # loss = th.cat(
+    def _value_loss(self, rewards, advantages, values, lasts):
+        loss = th.cat(
+            [
+                (
+                    self.discount_matrix[: len(r), : len(r)].matmul(r)
+                    - self.lambda_discount_matrix[: len(a), : len(a)].matmul(a)
+                    + l * self.discount_vector[-len(r) :]
+                    - v
+                ).square()
+                for r, a, v, l in zip(rewards, advantages, values, lasts)
+            ]
+        ).mean()
+
+        # residuals = th.cat(
         #     [
         #         (
         #             self.discount_matrix[: len(d), : len(d)].matmul(d)
         #             + l * self.discount_vector[-len(d) :]
         #             - v
-        #         ).square()
+        #         )
         #         for d, v, l in zip(deltas, values, lasts)
         #     ]
         # )
 
-        residuals = th.cat(
-            [
-                (
-                    self.discount_matrix[: len(d), : len(d)].matmul(d)
-                    + l * self.discount_vector[-len(d) :]
-                    - v
-                )
-                for d, v, l in zip(deltas, values, lasts)
-            ]
-        )
-
-        loss = th.nn.functional.huber_loss(
-            residuals,
-            th.zeros_like(residuals),
-            delta=1.0,
-            reduction="mean"
-        )
+        # loss = th.nn.functional.huber_loss(
+        #     residuals,
+        #     th.zeros_like(residuals),
+        #     delta=1.0,
+        #     reduction="mean"
+        # )
 
         return loss
 
@@ -486,7 +487,8 @@ class CustomPPO(OnPolicyAlgorithm):
                     ).split(lengths)
                     pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
                     main_value_loss = self._value_loss(
-                        deltas,
+                        rewards.split(lengths),
+                        advantages.split(lengths),
                         pred_values.flatten().split(lengths),
                         last_values
                     )
@@ -509,7 +511,8 @@ class CustomPPO(OnPolicyAlgorithm):
                     deltas = (rewards - old_advantages).split(lengths)
                     # pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.1, 0.1)
                     main_value_loss = self._value_loss(
-                        deltas,
+                        rewards.split(lengths),
+                        advantages.split(lengths),
                         values,
                         # pred_values.flatten().split(lengths), 
                         last_values
