@@ -509,12 +509,12 @@ class CustomPPO(OnPolicyAlgorithm):
                     # calculate original dae loss with detach A(s,a)
                     advantages_ = advantages.detach().clone()
                     deltas = (rewards - old_advantages).split(lengths)
-                    # pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.1, 0.1)
+                    pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
                     main_value_loss = self._value_loss(
                         rewards.split(lengths),
                         advantages.split(lengths),
-                        values,
-                        # pred_values.flatten().split(lengths), 
+                        # values,
+                        pred_values.flatten().split(lengths), 
                         last_values
                     )
                     main_value_loss = main_value_loss.mean()
