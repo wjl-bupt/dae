@@ -497,7 +497,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     td_loss = 0.5 * (advantages - td_error).square().mean()
                     td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                     value_loss = main_value_loss
-                    advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
+                    # advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
                 # discouple loss
                 else:
                     # discouple dae loss
@@ -525,11 +525,12 @@ class CustomPPO(OnPolicyAlgorithm):
                     # don't optimizer combine loss
                     td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = self.gamma)
                     td_loss = (0.5 * (advantages - next_advantages - td_error).square()).mean()
-                    # td_loss = th.nn.functional.huber_loss(advantages_norm_, td_error_norm, delta = 1.0).mean()
+                    # td_loss = th.nn.functional.huber_loss(advanges_norm_, td_error_norm, delta = 1.0).mean()
                     td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                     # 0.2 * td_error.var()  - 0.1 * advantages.var()
-                    value_loss = main_value_loss + td_loss
-                    advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
+                    # add a coef for td loss
+                    value_loss = main_value_loss + 0.1 * td_loss
+                    # advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
 
                 
                 # kl divergence
