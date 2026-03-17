@@ -1,9 +1,9 @@
 advantage_normalization: true
-batch_size: 4096
-batch_size_vf: 4096
+batch_size: 256
+batch_size_vf: 256
 ent_coef: 0.0
 full_action: false
-gae_like_lambda: 0.5
+gae_like_lambda: 0.9
 dae_discouple_correction: false
 kl_coef: 0.0
 vf_coef: 1.5
@@ -13,7 +13,7 @@ learning_rate:
     ftype: "linear"
 n_epochs: 10
 n_epochs_vf: 10
-n_steps: 128
+n_steps: 256
 shared: true
-nenvs: 32
+nenvs: 8
 nheads: 1

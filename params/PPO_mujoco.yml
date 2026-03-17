@@ -8,4 +8,4 @@ learning_rate:
     ftype: "linear"
 n_epochs: 6
 n_steps: 256
-nenvs: 16
+nenvs: 8
