@@ -297,18 +297,19 @@ if __name__ == "__main__":
         
         callbacks_list = []
         if args.use_wandb:
-
             if args.algo == "PPO":
                 use_full_action = False
                 nheads = 1
                 discouple = "null"
+                gae_like_coef = "0.95"
             else:
                 use_full_action = hparam['full_action']
                 nheads = hparam['nheads']
                 discouple = hparam['dae_discouple_correction']
+                gae_like_coef = f"{hparam['gae_like_lambda']}"
             commit_id = args.commit_id
-            run_name = f"{args.algo}_{_env}_seed{args.seed}_nheads{nheads}_fullact{use_full_action}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}_{time_str}_{cur_timestamp}"
-            group_name = f"{args.algo}_{_env}_nheads{nheads}_fullact{use_full_action}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}_{commit_id}_discouple{discouple}"
+            run_name = f"{args.algo}_{_env}_seed{args.seed}_nheads{nheads}_lambda{gae_like_coef}_fullact{use_full_action}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}_{time_str}_{cur_timestamp}"
+            group_name = f"{args.algo}_{_env}_nheads{nheads}_fullact{use_full_action}_lambda{gae_like_coef}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}_{commit_id}_discouple{discouple}"
 
             
             wandb_run = wandb.init(
