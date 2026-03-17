@@ -309,7 +309,7 @@ class CustomPPO(OnPolicyAlgorithm):
             [
                 (
                     self.discount_matrix[: len(r), : len(r)].matmul(r)
-                    - self.lambda_discount_matrix[: len(a), : len(a)].matmul(a)
+                    - self.discount_matrix[: len(a), : len(a)].matmul(a)
                     + l * self.discount_vector[-len(r) :]
                     - v
                 ).square()
@@ -518,7 +518,7 @@ class CustomPPO(OnPolicyAlgorithm):
                         last_values
                     )
                     main_value_loss = main_value_loss.mean()
-                    next_advantages = self.gamma * self.lambda_ * th.roll(advantages, -1)
+                    next_advantages = self.gamma * self.lambda_ * th.roll(old_advantages, -1)
                     next_advantages[th.cumsum(th.tensor(lengths), 0) - 1] = 0
                     # main_value_loss = (main_value_loss / (div.pow(2) + 1e-10) + 2  * div.log()).mean()
                     # calculate a auxlimary regularization for td error
