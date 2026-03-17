@@ -158,7 +158,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 # self.advantage_feature_extractor : np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net : 1.0,
-                self.advantage_net : 1.0,
+                self.advantage_net : 0.1,
                 # self.log_sigma_state: 0.01,
             }
             for module, gain in module_gains.items():
