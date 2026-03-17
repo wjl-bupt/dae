@@ -102,6 +102,7 @@ class CustomPPO(OnPolicyAlgorithm):
         device: Union[th.device, str] = "auto",
         _init_setup_model: bool = True,
         nheads: int = 2,
+        gae_like_lambda: float = 0.0,
         # NOTE(junweiluo):
         # use_wandb: bool = False,
         # wandb_project: Optional[str] = None,
@@ -159,8 +160,8 @@ class CustomPPO(OnPolicyAlgorithm):
             )
         # self.dae_correction = dae_correction
         self.dae_discouple_correction = dae_discouple_correction
-        self.lambda_ = 0.95
-        self.gl = self.gamma * self.lambda_
+        self.gae_like_lambda = gae_like_lambda
+        self.gl = self.gamma * self.gae_like_lambda
         self.discount_matrix = th.tensor(
             [
                 [0 if j < i else (self.gamma) ** (j - i) for j in range(n_steps)]
@@ -170,9 +171,9 @@ class CustomPPO(OnPolicyAlgorithm):
             device=self.device,
         )
         
-        self.lambda_discount_matrix = th.tensor(
+        self.gae_like_lambdadiscount_matrix = th.tensor(
             [
-                [0 if j < i else (self.gamma * self.lambda_) ** (j - i) for j in range(n_steps)]
+                [0 if j < i else (self.gamma * self.gae_like_lambda) ** (j - i) for j in range(n_steps)]
                 for i in range(n_steps)
             ],
             dtype=th.float32,
@@ -383,18 +384,39 @@ class CustomPPO(OnPolicyAlgorithm):
 
     def _compute_gae_like_advantages_(self, raw_advantages, lengths): 
         # give a time coef 
-        gae_like_coef = self.gamma * (self.lambda_ * (1 - self._current_progress_remaining)) 
-        gae_like_coef = self.gamma * self.lambda_ 
-        dones = th.zeros_like(raw_advantages) 
-        lengths = th.tensor(lengths) 
-        index = th.cumsum(lengths, dim=0) - 1 
-        dones[index.to(raw_advantages.device)] = 1 
-        gae_like_advantages = th.zeros_like(raw_advantages) 
-        gaelikelam = 0 
-        for t in reversed(range(lengths.sum())): 
-            gaelikelam = raw_advantages[t] + (1 - dones[t]) * gae_like_coef * gaelikelam 
-            gae_like_advantages[t] = gaelikelam 
-        
+        # gae_like_coef = self.gamma * (self.gae_like_lambda * (1 - self._current_progress_remaining)) 
+        # gae_like_coef = self.gamma * self.gae_like_lambda 
+        # dones = th.zeros_like(raw_advantages) 
+        # lengths = th.tensor(lengths) 
+        # index = th.cumsum(lengths, dim=0) - 1 
+        # dones[index.to(raw_advantages.device)] = 1 
+        # gae_like_advantages = th.zeros_like(raw_advantages) 
+        # gaelikelam = 0 
+        # for t in reversed(range(lengths.sum())): 
+        #     gaelikelam = raw_advantages[t] + (1 - dones[t]) * gae_like_coef * gaelikelam 
+        #     gae_like_advantages[t] = gaelikelam 
+
+        device = raw_advantages.device
+        coef = self.gamma * self.gae_like_lambda
+        B = raw_advantages.shape[0]
+        lengths = th.tensor(lengths, device=device)
+        # dones
+        dones = th.zeros(B, device=device)
+        dones[th.cumsum(lengths, dim=0) - 1] = 1.0
+        # reverse
+        adv = th.flip(raw_advantages, dims=[0])
+        done = th.flip(dones, dims=[0])
+
+        out = th.zeros_like(adv)
+
+        acc = th.zeros(1, device=device)
+
+        # ⚠️ 这里仍然是 loop，但在 GPU 上很快
+        for t in range(B):
+            acc = adv[t] + coef * (1 - done[t]) * acc
+            out[t] = acc   
+        gae_like_advantages = th.flip(out, dims=[0])     
+
         return gae_like_advantages
 
     def _compute_td_error(self, rewards, values, target_values, last_values, lengths, gamma=0.99):
@@ -497,7 +519,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     td_loss = 0.5 * (advantages - td_error).square().mean()
                     td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                     value_loss = main_value_loss
-                    # advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
+                    advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
                 # discouple loss
                 else:
                     # discouple dae loss
@@ -518,7 +540,7 @@ class CustomPPO(OnPolicyAlgorithm):
                         last_values
                     )
                     main_value_loss = main_value_loss.mean()
-                    next_advantages = self.gamma * self.lambda_ * th.roll(old_advantages, -1)
+                    next_advantages = self.gamma * self.gae_like_lambda * th.roll(old_advantages, -1)
                     next_advantages[th.cumsum(th.tensor(lengths), 0) - 1] = 0
                     # main_value_loss = (main_value_loss / (div.pow(2) + 1e-10) + 2  * div.log()).mean()
                     # calculate a auxlimary regularization for td error
