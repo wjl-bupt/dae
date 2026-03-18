@@ -3,7 +3,7 @@ batch_size: 256
 batch_size_vf: 256
 ent_coef: 0.0
 full_action: false
-gae_like_lambda: 0.99
+gae_like_lambda: 0.5
 dae_discouple_correction: false
 kl_coef: 0.0
 vf_coef: 0.5
