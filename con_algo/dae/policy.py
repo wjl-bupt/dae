@@ -134,14 +134,18 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         #     input_dim = self.observation_space.shape[0], block_num = 2,
         #     hidden_dim = hidden_dim, activation = self.advantage_activate_func,
         # )
+        
+        self.rank = self.nheads
+        self.low_rank_head = nn.Linear(hidden_dim, self.action_space.shape[0] * self.rank)
+        self.b_head = nn.Linear(hidden_dim, self.action_space.shape[0])
 
-        self.advantage_net = nn.Sequential(
-            nn.Linear(hidden_dim + self.action_space.shape[0] , hidden_dim * 2),
-            self.advantage_activate_func,
-            nn.Linear(hidden_dim * 2, self.action_space.shape[0]),
-            # 直接输出一个权重试一试：避免梯度爆炸
-            # nn.Linear(hidden_dim * 2, 1)
-        )
+        # self.advantage_net = nn.Sequential(
+        #     nn.Linear(hidden_dim + self.action_space.shape[0] , hidden_dim * 2),
+        #     self.advantage_activate_func,
+        #     nn.Linear(hidden_dim * 2, self.action_space.shape[0]),
+        #     # 直接输出一个权重试一试：避免梯度爆炸
+        #     # nn.Linear(hidden_dim * 2, 1)
+        # )
         # self.log_sigma_state = nn.Linear(hidden_dim, 1)
         # self.bs = nn.Linear(hidden_dim, 1)
 
@@ -158,7 +162,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 # self.advantage_feature_extractor : np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net : 1.0,
-                self.advantage_net : 0.1,
+                self.low_rank_head: 0.1,
+                self.b_head : 0.1,
                 # self.log_sigma_state: 0.01,
             }
             for module, gain in module_gains.items():
@@ -264,48 +269,23 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         dist = self.action_dist.proba_distribution(mean_actions, new_log_std)
         log_policies = dist.log_prob(actions)
         entropy = dist.entropy()
-        
-        actions_grad = actions.requires_grad_(True)
         # shape is [B, B, D]
         latent_vf = self.value_feature_extractor(obs)
-        ws = self.advantage_net(th.cat([latent_vf, actions], dim = 1))
+        U = self.low_rank_head(latent_vf).view(mu.size(0), self.action_space.shape[0], self.rank)
+        b = self.b_head(latent_vf)
+        # ws = self.advantage_net(th.cat([latent_vf, actions], dim = 1))
         with th.no_grad():
-            zs = - (actions - mu) / th.exp(2 * log_std)
-
-        # eps = th.rand_like(ws)
-        # inner = (ws * eps).sum()
-        # grad = th.autograd.grad(
-        #     inner,
-        #     actions_grad,
-        #     create_graph = True,
-        # )[0]
-
-        # div = (grad * eps).sum(dim = 1) 
-
-        
-        def f_single(x, w):
-            inp = th.cat([w, x], dim=-1)
-            return self.advantage_net(inp)
-
-        # # with th.no_grad():
-        J = vmap(jacrev(f_single))(actions, latent_vf.detach())  # [B,K,K]
-        # divs = J.squeeze(1)
-        divs = J.diagonal(dim1=1,dim2=2)
-        # divs = th.zeros_like(mu)
-
-        # div = th.autograd.grad(
-        #     ws.sum(),
-        #     actions_grad,
-        #     create_graph=True
-        # )[0]
-        # div = div.sum(dim = 1)
-        # bs = self.bs(latent_vf).squeeze(-1)
-        advantages = (ws * zs + divs).mean(1) 
+            delta = (actions - mu).unsqueeze(-1)
+        Ut_delta = th.bmm(U.transpose(1, 2), delta)
+        quad = -th.sum(Ut_delta ** 2, dim=(1, 2))
+        lin = th.sum(b * delta.squeeze(-1), dim = -1)
+        trace_term = th.sum((U ** 2) * th.exp(2 * log_std).unsqueeze(-1), dim=(1,2))
+        advantages = quad + lin + trace_term
         
         values = self.value_net(latent_vf)
         # sigma_state = self.log_sigma_state(latent_vf).exp().squeeze(-1)
         
-        return values, advantages, log_policies, entropy, ws, divs
+        return values, advantages, log_policies, entropy, quad, lin
         # return values, advantages, log_probs, distribution.entropy()
     
     def evaluate_state(
