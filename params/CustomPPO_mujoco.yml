@@ -3,7 +3,7 @@ batch_size: 256
 batch_size_vf: 256
 ent_coef: 0.0
 full_action: false
-gae_like_lambda: 0.7
+gae_like_lambda: 0.0
 dae_discouple_correction: false
 kl_coef: 0.0
 vf_coef: 1.5
@@ -16,4 +16,4 @@ n_epochs_vf: 10
 n_steps: 128
 shared: true
 nenvs: 16
-nheads: 1
+nheads: 3

@@ -465,7 +465,7 @@ class CustomPPO(OnPolicyAlgorithm):
         log_std = self.policy.log_std.detach()
 
         with th.no_grad():
-            self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size)        
+            self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size, gamma = self.gamma, gae_like_lambda = self.gae_like_lambda)        
 
 
         for epoch in range(self.n_epochs):
@@ -520,7 +520,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     corr = ((advantages - advantages.mean()) * (td_error - td_error.mean())).mean() / (td_error.std(unbiased = False) * advantages.std(unbiased = False) + 1e-10)
                     td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                     value_loss = main_value_loss
-                    advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
+                    # advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
                 # discouple loss
                 else:
                     # discouple dae loss
@@ -563,7 +563,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 # )
 
                 # normalize adv
-
+                advantages_ = old_advantages.clone()
                 if self.advantage_normalization:
                     advantages_norm = self._normalize_advantage(advantages_, policies = None)
 

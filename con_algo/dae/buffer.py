@@ -215,25 +215,38 @@ class CustomBuffer(BaseBuffer):
             start = end
         self.values = self.values
 
-    def update_advantage(self, policy, batch_size=1024, log_std = None):
+    def update_advantage(self, policy, batch_size=1024, log_std = None, gamma = 0.99, gae_like_lambda = 1.0):
         start = 0
         size = len(self.observations)
-        while start < size:
-            end = min(start + batch_size, size)
-            _obs = self.observations[start:end]
-            # NOTE(junweiluo): here we use mu instead of policy
-            _act = self.actions[start:end]
-            _mu = self.mu[start:end]
-            _noise = self.noises[start:end]
+        for _, (s_ind, e_ind) in enumerate(zip(self.start_indices, self.end_indices)):
+            traj_obs = self.observations[s_ind:e_ind]
+            traj_actions = self.actions[s_ind:e_ind]
+            traj_mu = self.mu[s_ind:e_ind]
+            traj_noise = self.noises[s_ind:e_ind]
             with th.no_grad():
-                _, adv = policy.predict_value(_obs, _act, _mu, log_std, _noise)
-            # lens = len(adv)
-            # last_advlam = adv[-1]
-            # gl = 0.99 * 0.95
-            # for t in range(lens-2, -1, -1):
-            #     adv[t] = adv[t] + gl * adv[t+1]
-            self.advantages[start:end] = adv
-            start = end
+                _, advantages = policy.predict_value(traj_obs, traj_actions, traj_mu, log_std, traj_noise)
+            lens = len(advantages)
+            gl = gamma * gae_like_lambda
+            for t in range(lens-2, -1, -1):
+                advantages[t] = advantages[t] + gl * advantages[t+1]
+            self.advantages[s_ind:e_ind] = advantages
+        
+        # while start < size:
+        #     end = min(start + batch_size, size)
+        #     _obs = self.observations[start:end]
+        #     # NOTE(junweiluo): here we use mu instead of policy
+        #     _act = self.actions[start:end]
+        #     _mu = self.mu[start:end]
+        #     _noise = self.noises[start:end]
+        #     with th.no_grad():
+        #         _, adv = policy.predict_value(_obs, _act, _mu, log_std, _noise)
+        #     lens = len(adv)
+        #     last_advlam = adv[-1]
+        #     gl = gamma * gae_like_lambda
+        #     for t in range(lens-2, -1, -1):
+        #         adv[t] = adv[t] + gl * adv[t+1]
+        #     self.advantages[start:end] = adv
+        #     start = end
         
         
 

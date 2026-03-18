@@ -136,7 +136,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # )
         
         self.rank = self.nheads
-        self.low_rank_head = nn.Linear(hidden_dim, self.action_space.shape[0] * self.rank)
+        self.u_head = nn.Linear(hidden_dim, self.action_space.shape[0] * self.rank)
         self.b_head = nn.Linear(hidden_dim, self.action_space.shape[0])
 
         # self.advantage_net = nn.Sequential(
@@ -162,8 +162,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 # self.advantage_feature_extractor : np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net : 1.0,
-                self.low_rank_head: 0.1,
-                self.b_head : 0.1,
+                self.u_head: 0.01,
+                self.b_head : 0.01,
                 # self.log_sigma_state: 0.01,
             }
             for module, gain in module_gains.items():
@@ -271,7 +271,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         entropy = dist.entropy()
         # shape is [B, B, D]
         latent_vf = self.value_feature_extractor(obs)
-        U = self.low_rank_head(latent_vf).view(mu.size(0), self.action_space.shape[0], self.rank)
+        U = self.u_head(latent_vf).view(mu.size(0), self.action_space.shape[0], self.rank)
         b = self.b_head(latent_vf)
         # ws = self.advantage_net(th.cat([latent_vf, actions], dim = 1))
         with th.no_grad():
