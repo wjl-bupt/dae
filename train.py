@@ -128,7 +128,7 @@ def load_hparam(hfile):
                 continue
             else:
                 hparam[k] = v
-    hparam['clip_range'] = 0.1
+    # hparam['clip_range'] = 0.1
     if "features_extractor" in par:
         if hparam.get("policy_kwargs") is None:
             hparam["policy_kwargs"] = dict()
