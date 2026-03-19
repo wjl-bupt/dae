@@ -463,7 +463,7 @@ class CustomPPO(OnPolicyAlgorithm):
         gnorm_max, gnorm_min = 0, float("inf")
         q_values = []
         log_std = self.policy.log_std.detach()
-        log_std = th.clamp(log_std, -4, 2)
+        # log_std = th.clamp(log_std, -4, 2)
 
         with th.no_grad():
             self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size, gamma = self.gamma, gae_like_lambda = self.gae_like_lambda)        
@@ -494,8 +494,9 @@ class CustomPPO(OnPolicyAlgorithm):
                     advantages,
                     log_policies,
                     entropy,
-                    ws,
-                    div,
+                    scores,
+                    divs,
+                    fs,
                 ) = self.policy.evaluate_state(data.observations, actions, mu, log_std, log_std)
 
                 # value loss
@@ -702,15 +703,20 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("rewards/reward_max", self.rollout_buffer.rewards.max().item())
         self.logger.record("rewards/reward_min", self.rollout_buffer.rewards.min().item())
         
-        self.logger.record("weights/weights_max", ws.detach().cpu().max().item())
-        self.logger.record("weights/weights_min", ws.detach().cpu().min().item())
-        self.logger.record("weights/weights_mean", ws.detach().cpu().mean().item())
-        self.logger.record("weights/weights_std", ws.detach().cpu().std().item())
+        self.logger.record("weights/weights_max", fs.detach().cpu().max().item())
+        self.logger.record("weights/weights_min", fs.detach().cpu().min().item())
+        self.logger.record("weights/weights_mean", fs.detach().cpu().mean().item())
+        self.logger.record("weights/weights_std", fs.detach().cpu().std().item())
         
-        self.logger.record("div/div_max", div.detach().cpu().max().item())
-        self.logger.record("div/div_mean", div.detach().cpu().mean().item())
-        self.logger.record("div/div_min", div.detach().cpu().min().item())
-        self.logger.record("div/div_std", div.detach().cpu().std().item())
+        self.logger.record("div/div_max", divs.detach().cpu().max().item())
+        self.logger.record("div/div_mean", divs.detach().cpu().mean().item())
+        self.logger.record("div/div_min", divs.detach().cpu().min().item())
+        self.logger.record("div/div_std", divs.detach().cpu().std().item())
+
+        self.logger.record("scores/scores_max", scores.detach().cpu().max().item())
+        self.logger.record("scores/scores_mean", scores.detach().cpu().mean().item())
+        self.logger.record("scores/scores_min", scores.detach().cpu().min().item())
+        self.logger.record("scores/scores_std", scores.detach().cpu().std().item())
         
         # 计算一下value network的评估是否准确
         targets = []

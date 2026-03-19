@@ -135,17 +135,15 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             hidden_dim = hidden_dim, activation = self.advantage_activate_func,
         )
         
-        self.rank = self.nheads
-        self.u_head = nn.Linear(hidden_dim, self.action_space.shape[0] * self.rank)
-        self.b_head = nn.Linear(hidden_dim, self.action_space.shape[0])
+        # self.rank = self.nheads
+        # self.u_head = nn.Linear(hidden_dim, self.action_space.shape[0] * self.rank)
+        # self.b_head = nn.Linear(hidden_dim, self.action_space.shape[0])
 
-        # self.advantage_net = nn.Sequential(
-        #     nn.Linear(hidden_dim + self.action_space.shape[0] , hidden_dim * 2),
-        #     self.advantage_activate_func,
-        #     nn.Linear(hidden_dim * 2, self.action_space.shape[0]),
-        #     # 直接输出一个权重试一试：避免梯度爆炸
-        #     # nn.Linear(hidden_dim * 2, 1)
-        # )
+        self.advantage_head = nn.Sequential(
+            nn.Linear(hidden_dim + self.action_space.shape[0] , hidden_dim * 2),
+            self.advantage_activate_func,
+            nn.Linear(hidden_dim * 2, self.action_space.shape[0]),
+        )
         # self.log_sigma_state = nn.Linear(hidden_dim, 1)
         # self.bs = nn.Linear(hidden_dim, 1)
 
@@ -162,8 +160,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 self.advantage_feature_extractor : np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net : 1.0,
-                self.u_head: 0.1,
-                self.b_head : 0.1,
+                self.advantage_head : 0.1,
                 # self.log_sigma_state: 0.01,
             }
             for module, gain in module_gains.items():
@@ -220,7 +217,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         mu = self.action_net(latent_obs)
         # log_std = self.log_std(latent_obs)
         log_std = self.log_std
-        log_std = th.clamp(log_std, -4, 2)
+        # log_std = th.clamp(log_std, -4, 2)
         
         return mu, log_std
 
@@ -272,22 +269,28 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         entropy = dist.entropy()
         # shape is [B, B, D]
         latent_vf = self.value_feature_extractor(obs)
-        latent_adv = self.advantage_feature_extractor(obs) 
-        U = self.u_head(latent_adv).view(mu.size(0), self.action_space.shape[0], self.rank)
-        b = self.b_head(latent_adv)
+        latent_adv = self.advantage_feature_extractor(obs)
+        # shape is [Batch, act_dim]
+        fs = self.advantage_head(th.cat([latent_adv, actions], dim = 1))
         # ws = self.advantage_net(th.cat([latent_vf, actions], dim = 1))
         with th.no_grad():
-            delta = (actions - mu).unsqueeze(-1)
-        Ut_delta = th.bmm(U.transpose(1, 2), delta)
-        quad = -th.sum(Ut_delta ** 2, dim=(1, 2))
-        lin = th.sum(b * delta.squeeze(-1), dim = -1)
-        trace_term = th.sum((U ** 2) * th.exp(2 * log_std).unsqueeze(-1), dim=(1,2))
-        advantages = quad + lin + trace_term
+            scores =  - (actions - mu) / (th.exp(2 * log_std) + 1e-12)
+
+        def f_single(x, w):
+            inp = th.cat([w, x], dim=-1)
+            return self.advantage_head(inp)
+
+        # # with th.no_grad():
+        J = vmap(jacrev(f_single))(actions, latent_adv.detach())  # [B,K,K]
+        # divs = J.squeeze(1)
+        divs = J.diagonal(dim1=1,dim2=2)
+        
+        advantages = (fs * scores + divs).sum(1) 
         
         values = self.value_net(latent_vf)
         # sigma_state = self.log_sigma_state(latent_vf).exp().squeeze(-1)
         
-        return values, advantages, log_policies, entropy, quad, lin
+        return values, advantages, log_policies, entropy, scores, divs, fs
         # return values, advantages, log_probs, distribution.entropy()
     
     def evaluate_state(
@@ -304,7 +307,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
 
         mean_actions = self.action_net(latent_pi)
         new_log_std = self.log_std
-        new_log_std = th.clamp(log_std, -4, 2)
+        # new_log_std = th.clamp(new_log_std, -4, 2)
         
         dist = self.action_dist.proba_distribution(mean_actions, new_log_std)
         log_policies = dist.log_prob(actions)
@@ -330,7 +333,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             values = self.value_net(self.value_feature_extractor(obs))
             return values, advantages
         else:
-            values, advantages, log_probs, entropy, ws, divs = self.evaluate_actions(obs, actions, mu, log_std, noise)
+            values, advantages, log_probs, entropy, ws, divs, _ = self.evaluate_actions(obs, actions, mu, log_std, noise)
             # build \pi-centered advantage constrant
             # advantages = advantages - advantages_mu
             return values, advantages
