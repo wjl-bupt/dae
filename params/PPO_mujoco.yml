@@ -1,6 +1,10 @@
 batch_size: 256
 vf_coef: 0.5
 ent_coef: 0.0
+clip_range:
+    init: 0.1
+    final: 0
+    ftype: "linear"
 clip_range_vf: 0.2
 learning_rate:
     init: 0.00025
