@@ -906,11 +906,12 @@ class CustomPPO(OnPolicyAlgorithm):
 
                 # Normalize advantage
                 if self.advantage_normalization:
-                    old_advantages = self._normalize_advantage(old_advantages, old_log_policies.exp())
+                    advantages_norm = self._normalize_advantage(old_advantages, old_log_policies.exp())
+                
 
                 # policy loss
                 policy_loss, ratio = self._policy_loss(
-                    old_advantages, log_policies, old_log_policies, actions, clip_range
+                    advantages_norm, log_policies, old_log_policies, actions, clip_range
                 )
                 
                 kl_div = ((ratio - 1) - ratio.log()).mean()
