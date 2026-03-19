@@ -463,6 +463,7 @@ class CustomPPO(OnPolicyAlgorithm):
         gnorm_max, gnorm_min = 0, float("inf")
         q_values = []
         log_std = self.policy.log_std.detach()
+        log_std = th.clamp(log_std, -4, 2)
 
         with th.no_grad():
             self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size, gamma = self.gamma, gae_like_lambda = self.gae_like_lambda)        
@@ -675,6 +676,11 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("advantage/abs_advantage_std", advantages_.abs().cpu().std().item())
         self.logger.record("advantage/abs_advantage_max", advantages_.abs().cpu().max().item())
         self.logger.record("advantage/abs_advantage_min", advantages_.abs().cpu().min().item())
+
+        self.logger.record("advantage/dae_advantage_mean", advantages.detach().cpu().mean().item())
+        self.logger.record("advantage/dae_advantage_std", advantages.detach().cpu().std().item())
+        self.logger.record("advantage/dae_advantage_max", advantages.detach().cpu().max().item())
+        self.logger.record("advantage/dae_advantage_min", advantages.detach().cpu().min().item())
 
         self.logger.record("values/V_mean", concat_values.detach().cpu().mean().item())
         self.logger.record("values/V_std", concat_values.detach().cpu().std().item())

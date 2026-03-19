@@ -10,7 +10,7 @@ full_action: false
 gae_like_lambda: 0.9
 dae_discouple_correction: false
 kl_coef: 0.0
-vf_coef: 1.5
+vf_coef: 0.5
 learning_rate:
     init: 0.00025
     final: 0
@@ -20,4 +20,4 @@ n_epochs_vf: 10
 n_steps: 128
 shared: true
 nenvs: 16
-nheads: 3
+nheads: 2
