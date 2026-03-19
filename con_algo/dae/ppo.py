@@ -318,24 +318,6 @@ class CustomPPO(OnPolicyAlgorithm):
             ]
         ).mean()
 
-        # residuals = th.cat(
-        #     [
-        #         (
-        #             self.discount_matrix[: len(d), : len(d)].matmul(d)
-        #             + l * self.discount_vector[-len(d) :]
-        #             - v
-        #         )
-        #         for d, v, l in zip(deltas, values, lasts)
-        #     ]
-        # )
-
-        # loss = th.nn.functional.huber_loss(
-        #     residuals,
-        #     th.zeros_like(residuals),
-        #     delta=1.0,
-        #     reduction="mean"
-        # )
-
         return loss
 
     def _policy_loss(
@@ -788,10 +770,11 @@ class CustomPPO(OnPolicyAlgorithm):
                 )
                 # value loss
                 values = values.flatten().split(lengths)
+                pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
                 value_loss = self._value_loss(
                     rewards.split(lengths), 
                     advantages.split(lengths), 
-                    values, 
+                    pred_values.split(lengths), 
                     last_values,
                 )
                 # value_loss = self.vf_coef * value_loss + 0.1 * (1.0 / (advantages.std() + 1.0)).mean() 
@@ -866,7 +849,28 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("scores/scores_mean", scores.detach().cpu().mean().item())
         self.logger.record("scores/scores_min", scores.detach().cpu().min().item())
         self.logger.record("scores/scores_std", scores.detach().cpu().std().item())
+        # 计算一下value network的评估是否准确
+        targets = []
+        preds = []
+        deltas = (rewards - advantages).split(lengths)
+        for d, v, l in zip(deltas, values, last_values):
 
+            target = (
+                self.discount_matrix[: len(d), : len(d)].matmul(d)
+                + l * self.discount_vector[-len(d):]
+            )
+
+            targets.append(target)
+            preds.append(v)
+
+        targets = th.cat(targets)
+        preds = th.cat(preds)
+
+        var_y = th.var(targets)
+        if var_y < 1e-8:
+            var_y =  th.tensor(0.0)
+        explain_var =  1 - th.var(targets - preds) / (var_y + 1e-12)  
+        self.logger.record("train/explained_variance", explain_var.cpu().mean().item())
 
         # self.logger.record("tanh_sigma")
 
