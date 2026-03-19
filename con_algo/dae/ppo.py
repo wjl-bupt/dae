@@ -764,7 +764,8 @@ class CustomPPO(OnPolicyAlgorithm):
 
         # train for n_epochs epochs
         old_log_std = self.policy.log_std.detach()
-
+        
+        self.policy.zero_grad(set_to_none=True)
         self.policy.optimizer.zero_grad(set_to_none=True)
         for epoch in range(self.n_epochs_vf):
             for data in self.rollout_buffer.get_trajs(batch_size=self.batch_size_vf):
@@ -846,9 +847,10 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("Q_values/Q_values_max", q_values.detach().cpu().max().item())
         self.logger.record("Q_values/Q_values_min", q_values.detach().cpu().min().item())
         # 
-        self.logger.record("actions/action_mean", actions.mean().item())
-        self.logger.record("actions/action_max", actions.max().item())
-        self.logger.record("actions/action_min", actions.min().item())
+        self.logger.record("actions/actions_mean", actions.mean().item())
+        self.logger.record("actions/actions_max", actions.max().item())
+        self.logger.record("actions/actions_min", actions.min().item())
+        self.logger.record("actions/actions_std", actions.std().item())
 
         self.logger.record("weights/weights_max", fs.detach().cpu().max().item())
         self.logger.record("weights/weights_min", fs.detach().cpu().min().item())
@@ -876,9 +878,9 @@ class CustomPPO(OnPolicyAlgorithm):
             gae_like_lambda = self.gae_like_lambda
         )
         
-        # if self.advantage_normalization:
-        #     self.rollout_buffer.advantages = (self.rollout_buffer.advantages - self.rollout_buffer.advantages.mean()) / (self.rollout_buffer.advantages.std() + 1e-8)
-        
+        if self.advantage_normalization:
+            self.rollout_buffer.advantages = (self.rollout_buffer.advantages - self.rollout_buffer.advantages.mean()) / (self.rollout_buffer.advantages.std() + 1e-8)
+        self.policy.zero_grad(set_to_none=True)
         self.policy.optimizer.zero_grad(set_to_none=True)
         for epoch in range(self.n_epochs):
             for rollout_data in self.rollout_buffer.get(self.batch_size):
@@ -900,11 +902,11 @@ class CustomPPO(OnPolicyAlgorithm):
 
                 # Normalize advantage
                 if self.advantage_normalization:
-                    advantages_norm = self._normalize_advantage(old_advantages, old_log_policies.exp())
+                    old_advantages = self._normalize_advantage(old_advantages, old_log_policies.exp())
 
                 # policy loss
                 policy_loss, ratio = self._policy_loss(
-                    advantages_norm, log_policies, old_log_policies, actions, clip_range
+                    old_advantages, log_policies, old_log_policies, actions, clip_range
                 )
                 
                 kl_div = ((ratio - 1) - ratio.log()).mean()
@@ -966,9 +968,9 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("train/policy_gradient_loss", np.mean(pg_losses))
         self.logger.record("train/value_loss", np.mean(value_losses))
         self.logger.record("train/gnorm_vf", np.mean(gnorm_vf))
-        self.logger.record("train/gnorm_vf_max", np.mean(gnorm_vf))
+        self.logger.record("train/gnorm_vf_max", gnorm_vf_max)
         self.logger.record("train/gnorm_pi", np.mean(gnorm_pi))
-        self.logger.record("train/gnorm_pi_max", np.mean(gnorm_pi))
+        self.logger.record("train/gnorm_pi_max", gnorm_pi_max)
         self.logger.record("train/approx_kl", np.mean(kl_divs))
         self.logger.record("train/loss", loss.item())
         self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
