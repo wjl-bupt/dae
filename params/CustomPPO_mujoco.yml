@@ -2,7 +2,7 @@ advantage_normalization: true
 batch_size: 256
 batch_size_vf: 256
 clip_range:
-    init: 0.1
+    init: 0.2
     final: 0
     ftype: "linear"
 ent_coef: 0.0
@@ -20,4 +20,4 @@ n_epochs_vf: 10
 n_steps: 128
 shared: true
 nenvs: 16
-nheads: 4
+nheads: 1

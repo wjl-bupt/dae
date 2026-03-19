@@ -160,7 +160,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 self.advantage_feature_extractor : np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net : 1.0,
-                self.advantage_head : 0.1,
+                self.advantage_head : 1.0,
                 # self.log_sigma_state: 0.01,
             }
             for module, gain in module_gains.items():
@@ -170,19 +170,19 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # TODO(junweiluo) (self.lr_vf is not None) and 
         if not self.shared_features_extractor:
             # self.modules_pi = nn.ModuleList([self.actor_feature_extractor, self.action_net, self.log_std])
-            self.modules_pi = list(self.observation_feature_extractor.parameters()) \
+            self.modules_pi = list(self.actor_feature_extractor.parameters()) \
                 + list(self.action_net.parameters()) + [self.log_std]
 
             self.optimizer = self.optimizer_class(
                 self.modules_pi, lr=lr_schedule(1), **self.optimizer_kwargs
             )
             self.modules_vf = nn.ModuleList(
-                [self.critic_observation_feature_extractor, self.action_feature_extractor,
-                 self.value_net, self.advantage_net,
+                [self.value_feature_extractor, self.advantage_feature_extractor,
+                 self.value_net, self.advantage_head,
             ])
             # self.lr_vf
-            self.optimizer_vf = AdamW(
-                self.modules_vf.parameters(), lr = 1.5e-4,
+            self.optimizer_vf = Adam(
+                self.modules_vf.parameters(), lr = 2.5e-4,
             )
         else:
             self.optimizer = self.optimizer_class(
@@ -274,7 +274,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         fs = self.advantage_head(th.cat([latent_adv, actions], dim = 1))
         # ws = self.advantage_net(th.cat([latent_vf, actions], dim = 1))
         with th.no_grad():
-            scores =  - (actions - mu) / (th.exp(2 * log_std) + 1e-12)
+            sigma = th.exp(2 * log_std)
+            scores =  - (actions - mu) / (sigma + 1e-12)
 
         def f_single(x, w):
             inp = th.cat([w, x], dim=-1)
@@ -285,7 +286,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # divs = J.squeeze(1)
         divs = J.diagonal(dim1=1,dim2=2)
         
-        advantages = (fs * scores + divs).sum(1) 
+        advantages = ((fs * scores + divs)).mean(1) 
         
         values = self.value_net(latent_vf)
         # sigma_state = self.log_sigma_state(latent_vf).exp().squeeze(-1)
@@ -321,7 +322,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
     def predict_value(
         self, obs: th.Tensor, actions: Optional[th.Tensor] = None, 
         mu: Optional[th.Tensor] = None, log_std : Optional[th.Tensor] = None,
-        noise: Optional[th.Tensor] = None,
+        noise: Optional[th.Tensor] = None, return_all : bool = False
     ) -> Tuple[th.Tensor, th.Tensor]:
         obs = obs.float()
         # latent = self.extract_features(obs)
@@ -333,7 +334,10 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             values = self.value_net(self.value_feature_extractor(obs))
             return values, advantages
         else:
-            values, advantages, log_probs, entropy, ws, divs, _ = self.evaluate_actions(obs, actions, mu, log_std, noise)
+            values, advantages, log_probs, entropy, scores, divs, fs = self.evaluate_actions(obs, actions, mu, log_std, noise)
             # build \pi-centered advantage constrant
             # advantages = advantages - advantages_mu
+            if return_all:
+                return values, advantages, scores, divs, fs
+
             return values, advantages
