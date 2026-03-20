@@ -783,8 +783,8 @@ class CustomPPO(OnPolicyAlgorithm):
                 corr = ((advantages - advantages.mean()) * (td_error - td_error.mean())).mean() \
                     / (td_error.std(unbiased = False) * advantages.std(unbiased = False) + 1e-10)
                 td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
-                # 
-                value_loss = main_value_loss + 0.1 * (1 - corr)
+                #  + 0.1 * (1 - corr)
+                value_loss = main_value_loss
                 # value_loss = self.vf_coef * value_loss + 0.1 * (1.0 / (advantages.std() + 1.0)).mean() 
                 # value_loss += (ex_adv**2).mean()
                 # value_loss = value_loss + 0.2 * (ex_adv**2).mean()

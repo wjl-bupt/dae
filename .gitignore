@@ -5,3 +5,6 @@ __pycache__/
 
 # 虚拟环境
 .venv/
+
+# 忽略plots下的文件
+plots/
