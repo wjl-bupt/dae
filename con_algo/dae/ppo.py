@@ -772,12 +772,19 @@ class CustomPPO(OnPolicyAlgorithm):
                 values = values.flatten().split(lengths)
                 
                 pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
-                value_loss = self._value_loss(
+                main_value_loss = self._value_loss(
                     rewards.split(lengths), 
                     advantages.split(lengths), 
                     pred_values.split(lengths), 
                     last_values,
                 )
+                td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = 0.99)
+                td_loss = 0.5 * (advantages - td_error).square().mean()
+                corr = ((advantages - advantages.mean()) * (td_error - td_error.mean())).mean() \
+                    / (td_error.std(unbiased = False) * advantages.std(unbiased = False) + 1e-10)
+                td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
+                # 
+                value_loss = main_value_loss + 0.5 * (1 - corr)
                 # value_loss = self.vf_coef * value_loss + 0.1 * (1.0 / (advantages.std() + 1.0)).mean() 
                 # value_loss += (ex_adv**2).mean()
                 # value_loss = value_loss + 0.2 * (ex_adv**2).mean()
@@ -797,14 +804,11 @@ class CustomPPO(OnPolicyAlgorithm):
                 self.policy.optimizer_vf.step()
 
                 # logging
-                value_losses.append(value_loss.item())
+                value_losses.append(main_value_loss.item())
                 gnorm_vf.append(gnorm.item())
                 gnorm_vf_max = max(gnorm_vf_max, gnorm.item())
 
-        td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = 0.99)
-        td_loss = 0.5 * (advantages - td_error).square().mean()
-        corr = ((advantages - advantages.mean()) * (td_error - td_error.mean())).mean() / (td_error.std(unbiased = False) * advantages.std(unbiased = False) + 1e-10)
-        td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
+
         self.logger.record("train/td_loss", td_loss.detach().cpu().mean().item())
         self.logger.record("train/td_direct_corr", td_direct_corr.detach().cpu().mean().item())
         self.logger.record("train/rew_adv_delta", (rewards - advantages).detach().cpu().mean().item())
@@ -850,6 +854,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("scores/scores_mean", scores.detach().cpu().mean().item())
         self.logger.record("scores/scores_min", scores.detach().cpu().min().item())
         self.logger.record("scores/scores_std", scores.detach().cpu().std().item())
+        
         # 计算一下value network的评估是否准确
         targets = []
         preds = []
