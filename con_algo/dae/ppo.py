@@ -770,11 +770,12 @@ class CustomPPO(OnPolicyAlgorithm):
                 )
                 # value loss
                 values = values.flatten().split(lengths)
-                pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
+                
+                # pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
                 value_loss = self._value_loss(
                     rewards.split(lengths), 
                     advantages.split(lengths), 
-                    pred_values.split(lengths), 
+                    values, 
                     last_values,
                 )
                 # value_loss = self.vf_coef * value_loss + 0.1 * (1.0 / (advantages.std() + 1.0)).mean() 
@@ -870,7 +871,7 @@ class CustomPPO(OnPolicyAlgorithm):
         if var_y < 1e-8:
             var_y =  th.tensor(0.0)
         explain_var =  1 - th.var(targets - preds) / (var_y + 1e-12)  
-        self.logger.record("train/explained_variance", explain_var.cpu().mean().item())
+        self.logger.record("train/explained_variance", explain_var.detach().cpu().mean().item())
 
         # self.logger.record("tanh_sigma")
 
@@ -985,6 +986,10 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("train/std", old_log_std.cpu().exp().mean().item())
         self.logger.record("train/ratio", ratio.cpu().mean().item()) 
         # self.logger.record("losses/lr_vf_", self.policy.optimizer_vf.param_groups[0]["lr"])
+
+        self.logger.record("log_policies/policy_min", log_policies.detach().cpu().min().item())
+        self.logger.record("log_policies/policy_max", log_policies.detach().cpu().max().item())
+        self.logger.record("log_policies/policy_mean", log_policies.detach().cpu().mean().item())
 
     def train(self) -> None:
         """

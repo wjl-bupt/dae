@@ -1,13 +1,13 @@
 advantage_normalization: true
-batch_size: 256
-batch_size_vf: 256
+batch_size: 2048
+batch_size_vf: 2048
 clip_range:
     init: 0.1
     final: 0
     ftype: "linear"
 ent_coef: 0.0
 full_action: false
-gae_like_lambda: 0.99
+gae_like_lambda: 0.95
 dae_discouple_correction: false
 kl_coef: 0.0
 vf_coef: 0.5
