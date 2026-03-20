@@ -771,11 +771,11 @@ class CustomPPO(OnPolicyAlgorithm):
                 # value loss
                 values = values.flatten().split(lengths)
                 
-                # pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
+                pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
                 value_loss = self._value_loss(
                     rewards.split(lengths), 
                     advantages.split(lengths), 
-                    values, 
+                    pred_values.split(lengths), 
                     last_values,
                 )
                 # value_loss = self.vf_coef * value_loss + 0.1 * (1.0 / (advantages.std() + 1.0)).mean() 

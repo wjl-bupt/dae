@@ -15,10 +15,8 @@ PROJECT="mujoco-sb3-dae9"
 
 # Mujoco 环境列表
 ENVS=(
-    
-    
-    "HalfCheetah-v5"
     "Ant-v5"
+    "HalfCheetah-v5"
     # "HumanoidStandup-v5"
     "Swimmer-v5"
     "Hopper-v5"

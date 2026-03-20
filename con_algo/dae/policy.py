@@ -183,7 +183,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             ])
             # self.lr_vf
             self.optimizer_vf = Adam(
-                self.modules_vf.parameters(), lr = 2e-4,
+                self.modules_vf.parameters(), lr = 2.5e-4,
             )
         else:
             self.optimizer = self.optimizer_class(
