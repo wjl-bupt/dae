@@ -10,7 +10,7 @@ HPARAM_FILE="/root/dae/params/PPO_mujoco.yml"
 THREADS=16
 LOGGING="--logging"
 USE_WANDB="--use_wandb"
-PROJECT="mujoco-sb3-dae10"
+PROJECT="mujoco-sb3-dae11"
 
 # Mujoco 环境列表
 ENVS=(
@@ -19,10 +19,10 @@ ENVS=(
     "Ant-v5"
     # "HumanoidStandup-v5"
     "Swimmer-v5"
+    "Walker2d-v5"
     "Hopper-v5"
     "InvertedPendulum-v5"
     "InvertedDoublePendulum-v5"
-    "Walker2d-v5"
     "Reacher-v5"
     "Pusher-v5"
     "Humanoid-v5"
@@ -39,7 +39,7 @@ MAX_SEED=5
 # 双循环：每个环境 × 多个种子
 # ----------------------------
 for ENV_ID in "${ENVS[@]}"; do
-    for (( SEED=0; SEED<MAX_SEED; SEED++ )); do
+    for (( SEED=1; SEED<=MAX_SEED; SEED++ )); do
         
         RUN_ID="${ENV_ID}_seed${SEED}"
         echo "Launching experiment: env=$ENV_ID seed=$SEED run_id=$RUN_ID"

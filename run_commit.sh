@@ -64,6 +64,8 @@ echo "-----------------------------------"
 
 cd "$TMP_DIR" || exit 1
 
+sleep 5
+
 export PYTHONPATH="$TMP_DIR:$PYTHONPATH"
 
 bash "$ROOT/$SCRIPT" "$COMMIT"
