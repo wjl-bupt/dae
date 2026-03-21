@@ -727,6 +727,14 @@ class CustomPPO(OnPolicyAlgorithm):
                         
 
     def _train_separate(self) -> None:
+        
+        # corr loss coef
+        max_corr_coef = 0.5
+        cur_t = (1 - self._current_progress_remaining) / 0.5
+        cur_t = max(0.0, min(1.0, cur_t))
+        cur_t = cur_t * cur_t * (3 - 2 * cur_t)
+        cur_corr_coef = cur_t * max_corr_coef
+        # cur_corr_coef = max_corr_coef * min(1.0, (1 - self._current_progress_remaining) * 2)
 
         # Update optimizer learning rate
         self._update_learning_rate(
@@ -784,7 +792,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     / (td_error.std(unbiased = False) * advantages.std(unbiased = False) + 1e-10)
                 td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                 #  + 0.1 * (1 - corr)
-                value_loss = main_value_loss + 0.5 * (1 - corr)
+                value_loss = main_value_loss + cur_corr_coef * (1 - corr)
                 # value_loss = self.vf_coef * value_loss + 0.1 * (1.0 / (advantages.std() + 1.0)).mean() 
                 # value_loss += (ex_adv**2).mean()
                 # value_loss = value_loss + 0.2 * (ex_adv**2).mean()
@@ -854,6 +862,8 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("scores/scores_mean", scores.detach().cpu().mean().item())
         self.logger.record("scores/scores_min", scores.detach().cpu().min().item())
         self.logger.record("scores/scores_std", scores.detach().cpu().std().item())
+        
+        self.logger.record("train/cur_corr_coef", cur_corr_coef)
         
         # 计算一下value network的评估是否准确
         targets = []

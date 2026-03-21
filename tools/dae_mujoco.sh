@@ -40,7 +40,7 @@ MAX_SEED=5
 # 双循环：每个环境 × 多个种子
 # ----------------------------
 for ENV_ID in "${ENVS[@]}"; do
-    for (( SEED=1; SEED<MAX_SEED; SEED++ )); do
+    for (( SEED=1; SEED<=MAX_SEED; SEED++ )); do
         
         RUN_ID="${ENV_ID}_seed${SEED}"
         echo "Launching experiment: env=$ENV_ID seed=$SEED run_id=$RUN_ID"
