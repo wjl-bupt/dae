@@ -359,12 +359,17 @@ class CustomPPO(OnPolicyAlgorithm):
             old_logp = old_log_policy
             ratio = th.exp(logp - old_logp)
             if self.use_sub_action_ratio:
-                ratio = th.mean(ratio, dim = 1)
+                ratio = ratio
+                #  / self.action_space.shape[0]
+                adv = adv.unsqueeze(-1)
+                policy_loss_1 = adv * ratio
+                policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
+                loss = -th.min(policy_loss_1, policy_loss_2).mean()
             else:
                 ratio = th.prod(ratio, dim = 1)
-            policy_loss_1 = adv * ratio
-            policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
-            loss = -th.min(policy_loss_1, policy_loss_2).mean()
+                policy_loss_1 = adv * ratio
+                policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
+                loss = -th.min(policy_loss_1, policy_loss_2).mean()
             
 
         return loss, ratio
@@ -622,9 +627,9 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("train/clip_fraction", np.mean(clip_fractions))
         self.logger.record("train/entropy_loss", np.mean(entropy_losses))
         # self.logger.record("train/entropy_losses", np.mean(entropy_losses))
-        self.logger.record("log_policies/policy_min", log_policies.detach().cpu().min().item())
-        self.logger.record("log_policies/policy_max", log_policies.detach().cpu().max().item())
-        self.logger.record("log_policies/policy_mean", log_policies.detach().cpu().mean().item())
+        self.logger.record("log_policies/policy_min", log_policies.sum(dim=1).detach().cpu().min().item())
+        self.logger.record("log_policies/policy_max", log_policies.sum(dim=1).detach().cpu().max().item())
+        self.logger.record("log_policies/policy_mean", log_policies.sum(dim=1).detach().cpu().mean().item())
         
         self.logger.record("train/policy_gradient_loss", np.mean(pg_losses))
         self.logger.record("train/value_loss", np.mean(value_losses))
@@ -798,7 +803,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                 #  + 0.1 * (1 - corr) 
                 # + cur_corr_coef * (1 - corr)
-                value_loss = main_value_loss 
+                value_loss = main_value_loss + 0.2 * (1 - corr) 
                 # value_loss = self.vf_coef * value_loss + 0.1 * (1.0 / (advantages.std() + 1.0)).mean() 
                 # value_loss += (ex_adv**2).mean()
                 # value_loss = value_loss + 0.2 * (ex_adv**2).mean()
@@ -1008,9 +1013,9 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("train/ratio", ratio.cpu().mean().item()) 
         # self.logger.record("losses/lr_vf_", self.policy.optimizer_vf.param_groups[0]["lr"])
 
-        self.logger.record("log_policies/policy_min", log_policies.detach().cpu().min().item())
-        self.logger.record("log_policies/policy_max", log_policies.detach().cpu().max().item())
-        self.logger.record("log_policies/policy_mean", log_policies.detach().cpu().mean().item())
+        self.logger.record("log_policies/policy_min", log_policies.sum(-1).detach().cpu().min().item())
+        self.logger.record("log_policies/policy_max", log_policies.sum(-1).detach().cpu().max().item())
+        self.logger.record("log_policies/policy_mean", log_policies.sum(-1).detach().cpu().mean().item())
 
     def train(self) -> None:
         """
