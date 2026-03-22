@@ -103,6 +103,7 @@ class CustomPPO(OnPolicyAlgorithm):
         _init_setup_model: bool = True,
         nheads: int = 2,
         gae_like_lambda: float = 0.0,
+        use_sub_action_ratio: bool = True,
         # NOTE(junweiluo):
         # use_wandb: bool = False,
         # wandb_project: Optional[str] = None,
@@ -153,6 +154,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self.kl_coef = kl_coef
         self.shared = shared
         self.nheads = nheads
+        self.use_sub_action_ratio = use_sub_action_ratio
 
         if not shared:
             warnings.warn(
@@ -356,7 +358,10 @@ class CustomPPO(OnPolicyAlgorithm):
             logp = log_policy
             old_logp = old_log_policy
             ratio = th.exp(logp - old_logp)
-            # NOTE(junweiluo): 尝试不再使用clip
+            if self.use_sub_action_ratio:
+                ratio = th.mean(ratio, dim = 1)
+            else:
+                ratio = th.prod(ratio, dim = 1)
             policy_loss_1 = adv * ratio
             policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
             loss = -th.min(policy_loss_1, policy_loss_2).mean()

@@ -244,7 +244,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # actions_w_tanh = nn.functional.tanh(actions)
 
         # log-prob（包含 tanh Jacobian 修正）
-        log_policies = dist.log_prob(actions)
+        log_policies = dist.log_prob(actions, need_sum = False)
         # log_policies -= th.log(1 - actions_w_tanh.pow(2) + 1e-8)
         # log_policies = log_policies.sum(-1)
             
@@ -266,7 +266,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         new_log_std = self.log_std
         
         dist = self.action_dist.proba_distribution(mean_actions, new_log_std)
-        log_policies = dist.log_prob(actions)
+        log_policies = dist.log_prob(actions, need_sum = False)
         entropy = dist.entropy()
         # shape is [B, B, D]
         latent_vf = self.value_feature_extractor(obs)
@@ -312,7 +312,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # new_log_std = th.clamp(new_log_std, -4, 2)
         
         dist = self.action_dist.proba_distribution(mean_actions, new_log_std)
-        log_policies = dist.log_prob(actions)
+        log_policies = dist.log_prob(actions, need_sum = False)
         # log_policies -= th.log(1 - tanh_w_actions.pow(2) + 1e-8)
         # log_policies = log_policies.sum(-1)
         # policies = distribution.distribution.probs

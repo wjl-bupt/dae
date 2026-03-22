@@ -82,7 +82,7 @@ class CustomBuffer(BaseBuffer):
         #     (self.buffer_size, self.n_envs, self.action_space.n), dtype=np.float32
         # )
         self._log_policies = np.zeros(
-            (self.buffer_size, self.n_envs), dtype=np.float32
+            (self.buffer_size, self.n_envs, self.action_dim), dtype=np.float32
         )
         self._values = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
         
@@ -195,7 +195,7 @@ class CustomBuffer(BaseBuffer):
         self.start_indices = np.insert(np.cumsum(self.lengths), 0, 0)[:-1]
         self.end_indices = np.cumsum(self.lengths)
         self.advantages = th.empty(
-            self.log_policies.shape, dtype=th.float32, device=self.device
+            self.rewards.shape, dtype=th.float32, device=self.device
         )
         
 
