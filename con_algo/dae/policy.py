@@ -160,7 +160,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 # self.advantage_feature_extractor : np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net : 1.0,
-                self.advantage_head : 1.0,
+                self.advantage_head : 0.1,
                 # self.log_sigma_state: 0.01,
             }
             for module, gain in module_gains.items():
@@ -183,7 +183,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             ])
             # self.lr_vf
             self.optimizer_vf = Adam(
-                self.modules_vf.parameters(), lr = 2.5e-4,
+                self.modules_vf.parameters(), lr = 2e-4,
             )
         else:
             self.optimizer = self.optimizer_class(
