@@ -138,9 +138,11 @@ class CustomPPO(OnPolicyAlgorithm):
             # NOTE(junweiluo)： 新版本的sb需要注释掉这个参数
             # create_eval_env=create_eval_env,
             seed=seed,
+            
             _init_setup_model=False,
             # NOTE(junweiluo): 
             supported_action_spaces=(spaces.Box, ),
+            
         )
 
         self.batch_size = batch_size
@@ -155,6 +157,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self.shared = shared
         self.nheads = nheads
         self.use_sub_action_ratio = use_sub_action_ratio
+        self.learning_rate_vf = learning_rate_vf
 
         if not shared:
             warnings.warn(
@@ -276,6 +279,7 @@ class CustomPPO(OnPolicyAlgorithm):
             lr_schedule_vf=self.lr_schedule,
             shared_features_extractor=self.shared,
             nheads = self.nheads,
+            learning_rate_vf = self.learning_rate_vf,
             **self.policy_kwargs,
         )
         self.policy = self.policy.to(self.device)
@@ -293,7 +297,7 @@ class CustomPPO(OnPolicyAlgorithm):
             new_lr = schedule(self._current_progress_remaining)
             update_learning_rate(optimizer, new_lr)
         elif suffix == "_vf":
-            new_lr = 2.5e-4 * self._current_progress_remaining
+            new_lr = self.learning_rate_vf * self._current_progress_remaining
             for param_group in optimizer.param_groups:
                 param_group["lr"] = new_lr
         else:
@@ -361,7 +365,7 @@ class CustomPPO(OnPolicyAlgorithm):
             if self.use_sub_action_ratio:
                 ratio = ratio
                 #  / self.action_space.shape[0]
-                adv = adv.unsqueeze(-1)
+                adv = adv.unsqueeze(-1)  / self.action_space.shape[0]
                 policy_loss_1 = adv * ratio
                 policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
                 loss = -th.min(policy_loss_1, policy_loss_2).mean()
@@ -733,8 +737,6 @@ class CustomPPO(OnPolicyAlgorithm):
 
         explain_var =  1 - th.var(targets - preds) / var_y  
         self.logger.record("train/explained_variance", explain_var.cpu().mean().item())
-        
-                        
 
     def _train_separate(self) -> None:
         
@@ -803,7 +805,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                 #  + 0.1 * (1 - corr) 
                 # + cur_corr_coef * (1 - corr)
-                value_loss = main_value_loss + 0.2 * (1 - corr) 
+                value_loss = main_value_loss
                 # value_loss = self.vf_coef * value_loss + 0.1 * (1.0 / (advantages.std() + 1.0)).mean() 
                 # value_loss += (ex_adv**2).mean()
                 # value_loss = value_loss + 0.2 * (ex_adv**2).mean()

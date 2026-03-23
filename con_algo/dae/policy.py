@@ -43,7 +43,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         shared_features_extractor: bool = True,
         net_arch : List[Union[int, Dict[str, List[int]]]] = [dict(pi=[64, 64], vf=[64, 64])],
         activation_fn : Optional[nn.Module] = nn.Tanh,
-        nheads : int = 2
+        nheads : int = 2,
+        learning_rate_vf: float = 0.00015,
     ):
         self.nheads = nheads
         self.bins = 50
@@ -51,7 +52,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         self.shared_features_extractor = shared_features_extractor
         # if lr_schedule_vf else None
         self.lr_vf = lr_schedule_vf(1) if lr_schedule_vf else None
-        
+        self.learning_rate_vf = learning_rate_vf
 
         super(CustomActorCriticPolicy, self).__init__(
             observation_space,
@@ -182,8 +183,9 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                  self.value_net, self.advantage_head,
             ])
             # self.lr_vf
+            # we will use linear decay in ppo.py
             self.optimizer_vf = Adam(
-                self.modules_vf.parameters(), lr = 2e-4,
+                self.modules_vf.parameters(), lr = self.learning_rate_vf,
             )
         else:
             self.optimizer = self.optimizer_class(
