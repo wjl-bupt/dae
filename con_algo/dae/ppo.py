@@ -743,13 +743,13 @@ class CustomPPO(OnPolicyAlgorithm):
     def _train_separate(self) -> None:
         
         # corr loss coef
-        max_corr_coef = 0.5
-        cur_t = (1 - self._current_progress_remaining) / 0.5
-        cur_t = max(0.0, min(1.0, cur_t))
-        cur_t = cur_t * cur_t * (3 - 2 * cur_t)
-        cur_corr_coef = cur_t * max_corr_coef
+        # max_corr_coef = 0.5
+        # cur_t = (1 - self._current_progress_remaining) / 0.5
+        # cur_t = max(0.0, min(1.0, cur_t))
+        # cur_t = cur_t * cur_t * (3 - 2 * cur_t)
+        # cur_corr_coef = cur_t * max_corr_coef
         # cur_corr_coef = max_corr_coef * min(1.0, (1 - self._current_progress_remaining) * 2)
-
+        cur_corr_coef = max(0.05, self.corr_coef * self._current_progress_remaining)
         # Update optimizer learning rate
         self._update_learning_rate(
             self.policy.optimizer, self.lr_schedule, suffix="_pi"
@@ -807,7 +807,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                 #  + 0.1 * (1 - corr) 
                 # + cur_corr_coef * (1 - corr)
-                value_loss = main_value_loss + self.corr_coef * (1 - corr) 
+                value_loss = main_value_loss + cur_corr_coef * (1 - corr) 
                 # value_loss = self.vf_coef * value_loss + 0.1 * (1.0 / (advantages.std() + 1.0)).mean() 
                 # value_loss += (ex_adv**2).mean()
                 # value_loss = value_loss + 0.2 * (ex_adv**2).mean()

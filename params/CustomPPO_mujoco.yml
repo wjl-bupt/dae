@@ -12,7 +12,7 @@ use_sub_action_ratio: true
 dae_discouple_correction: false
 kl_coef: 0.0
 vf_coef: 0.5
-corr_coef: 0.0
+corr_coef: 0.1
 learning_rate:
     init: 0.00025
     final: 0
