@@ -104,6 +104,7 @@ class CustomPPO(OnPolicyAlgorithm):
         nheads: int = 2,
         gae_like_lambda: float = 0.0,
         use_sub_action_ratio: bool = True,
+        corr_coef: float = 0.2,
         # NOTE(junweiluo):
         # use_wandb: bool = False,
         # wandb_project: Optional[str] = None,
@@ -158,6 +159,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self.nheads = nheads
         self.use_sub_action_ratio = use_sub_action_ratio
         self.learning_rate_vf = learning_rate_vf
+        self.corr_coef = corr_coef
 
         if not shared:
             warnings.warn(
@@ -805,7 +807,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                 #  + 0.1 * (1 - corr) 
                 # + cur_corr_coef * (1 - corr)
-                value_loss = main_value_loss + 0.5 * (1 - corr) 
+                value_loss = main_value_loss + self.corr_coef * (1 - corr) 
                 # value_loss = self.vf_coef * value_loss + 0.1 * (1.0 / (advantages.std() + 1.0)).mean() 
                 # value_loss += (ex_adv**2).mean()
                 # value_loss = value_loss + 0.2 * (ex_adv**2).mean()
