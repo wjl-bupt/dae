@@ -20,6 +20,8 @@ import wandb
 import argparse
 import numpy as np
 import os
+import hashlib
+import json
 import yaml
 import torch.nn as nn
 import gymnasium as gym
@@ -145,7 +147,18 @@ def load_hparam(hfile):
         else:
             # NOTE(junweiluo): mujoco use flatten observation
             pass
-    return hparam, par["nenvs"]
+    
+    # build an identity string for a specific hparam
+    hparam2str = {}
+    for k, v in hparam.items():
+        if callable(v):
+            hparam2str[k] = v.__name__   # 或直接 skip
+        else:
+            hparam2str[k] = v
+    hparam2str = json.dumps(hparam2str, sort_keys=True)
+    hparam_id = hashlib.md5(hparam2str.encode()).hexdigest()
+
+    return hparam, par["nenvs"], hparam_id
 
 
 def get_default_hparam(args):
@@ -270,7 +283,7 @@ if __name__ == "__main__":
             policy = A2CPolicy
         get_env = get_mujoco_env
 
-    hparam, nenvs = load_hparam(args.hparam_file)
+    hparam, nenvs, hparam_id = load_hparam(args.hparam_file)
 
     for k, v in hparam.items():
         if not callable(v):
@@ -309,8 +322,8 @@ if __name__ == "__main__":
                 gae_like_coef = f"{hparam['gae_like_lambda']}"
             commit_id = args.commit_id
             run_name = f"{args.algo}_{_env}_seed{args.seed}_nheads{nheads}_lambda{gae_like_coef}_fullact{use_full_action}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}_{time_str}_{cur_timestamp}"
-            group_name = f"{args.algo}_{_env}_nheads{nheads}_fullact{use_full_action}_lambda{gae_like_coef}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}_{commit_id}_discouple{discouple}"
-
+            # group_name = f"{args.algo}_{_env}_nheads{nheads}_fullact{use_full_action}_lambda{gae_like_coef}_vf{hparam['vf_coef']}_epochs{hparam['n_epochs']}_{commit_id}_discouple{discouple}"
+            group_name = f"{args.algo}_{_env}_{hparam_id}_{commit_id}"
             
             wandb_run = wandb.init(
                 project = args.project,
@@ -319,6 +332,7 @@ if __name__ == "__main__":
                 sync_tensorboard = True,
                 monitor_gym=True,
                 save_code=True,
+                config=hparam
             )
             artifact = wandb.Artifact("con_algo", type = "code")
             for root, dirs, files in os.walk("con_algo/dae"):
