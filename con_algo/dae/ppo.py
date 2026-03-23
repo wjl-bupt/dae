@@ -768,6 +768,7 @@ class CustomPPO(OnPolicyAlgorithm):
         # cur_corr_coef = cur_t * max_corr_coef
         # cur_corr_coef = max_corr_coef * min(1.0, (1 - self._current_progress_remaining) * 2)
         cur_corr_coef = max(0.05, self.corr_coef * self._current_progress_remaining)
+        cur_corr_coef = self.corr_coef
         # Update optimizer learning rate
         self._update_learning_rate(
             self.policy.optimizer, self.lr_schedule, suffix="_pi"
