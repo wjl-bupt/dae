@@ -314,17 +314,35 @@ class CustomPPO(OnPolicyAlgorithm):
         return (advantages - advantages.mean() ) / (advantages.std() + eps)
 
     def _value_loss(self, rewards, advantages, values, lasts):
-        loss = th.cat(
-            [
-                (
-                    self.discount_matrix[: len(r), : len(r)].matmul(r)
-                    - self.discount_matrix[: len(a), : len(a)].matmul(a)
-                    + l * self.discount_vector[-len(r) :]
-                    - v
-                ).square()
-                for r, a, v, l in zip(rewards, advantages, values, lasts)
-            ]
-        ).mean()
+        # loss = th.cat(
+        #     [
+        #         (
+        #             self.discount_matrix[: len(r), : len(r)].matmul(r)
+        #             - self.discount_matrix[: len(a), : len(a)].matmul(a)
+        #             + l * self.discount_vector[-len(r) :]
+        #             - v
+        #         ).square()
+        #         for r, a, v, l in zip(rewards, advantages, values, lasts)
+        #     ]
+        # ).mean()
+
+        preds = []
+        targets = []
+
+        for r, a, v, l in zip(rewards, advantages, values, lasts):
+            target = (
+                self.discount_matrix[: len(r), : len(r)].matmul(r)
+                - self.discount_matrix[: len(a), : len(a)].matmul(a)
+                + l * self.discount_vector[-len(r):]
+            )
+
+            preds.append(v)
+            targets.append(target)
+
+        preds = th.cat(preds)
+        targets = th.cat(targets)
+        beta = targets.std().detach()
+        loss = th.nn.functional.smooth_l1_loss(preds, targets, beta=beta)
 
         return loss
 
