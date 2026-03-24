@@ -25,7 +25,8 @@ import json
 import yaml
 import torch.nn as nn
 import gymnasium as gym
-
+import random
+import torch as th
 from gymnasium.wrappers import (
     FlattenObservation, RecordEpisodeStatistics, ClipAction, 
     NormalizeObservation, TransformObservation,
@@ -233,7 +234,15 @@ def get_discrete_env(e, envs, args, logdir):
 
 # def get_env(e, envs, args, logdir):
 
-
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    th.manual_seed(seed)
+    th.cuda.manual_seed(seed)
+    th.cuda.manual_seed_all(seed)
+    th.backends.cudnn.deterministic = True
+    th.backends.cudnn.benchmark = False
+    th.use_deterministic_algorithms(True)
 
 def finish(env, algo, steps):
     print("Finishing up...")
@@ -246,6 +255,7 @@ def finish(env, algo, steps):
 if __name__ == "__main__":
 
     args = get_args()
+    set_seed(args.seed)
     if args.continous == False:
         from algo.custom_ppo.ppo import CustomPPO
         from algo.custom_ppo.policy import CustomActorCriticPolicy
