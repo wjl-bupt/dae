@@ -8,7 +8,7 @@ clip_range:
 ent_coef: 0.0
 full_action: false
 gae_like_lambda: 0.0
-use_sub_action_ratio: true
+use_sub_action_ratio: false
 use_huber_loss: true
 dae_discouple_correction: false
 kl_coef: 0.0
@@ -18,7 +18,7 @@ learning_rate:
     init: 0.00025
     final: 0
     ftype: "linear"
-learning_rate_vf: 0.00015
+learning_rate_vf: 0.00020
 n_epochs: 10
 n_epochs_vf: 6
 n_steps: 32

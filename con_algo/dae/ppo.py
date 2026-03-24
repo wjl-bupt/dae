@@ -352,13 +352,13 @@ class CustomPPO(OnPolicyAlgorithm):
             if self.use_sub_action_ratio:
                 ratio = th.exp(logp - old_logp)
                 #  / self.action_space.shape[0]
-                adv = adv.unsqueeze(-1)  / self.action_space.shape[0]
+                adv = adv.unsqueeze(-1)
                 policy_loss_1 = adv * ratio
                 policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
                 loss = -th.min(policy_loss_1, policy_loss_2).mean()
             else:
-                log_ratio = (logp - old_logp).sum(dim = 1)
-                ratio = log_ratio.exp()
+                log_ratio = (logp - old_logp)
+                ratio = log_ratio.exp().prod(dim = 1)
                 policy_loss_1 = adv * ratio
                 policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
                 loss = -th.min(policy_loss_1, policy_loss_2).mean()
