@@ -1,3 +1,7 @@
+import torch as th
+th.set_num_threads(32)
+th.set_num_interop_threads(1)
+
 from stable_baselines3 import PPO
 from stable_baselines3.common.torch_layers import NatureCNN
 from stable_baselines3.common.env_util import make_atari_env, make_vec_env
@@ -26,8 +30,7 @@ import yaml
 import torch.nn as nn
 import gymnasium as gym
 import random
-import torch as th
-th.set_num_threads(1)
+
 from gymnasium.wrappers import (
     FlattenObservation, RecordEpisodeStatistics, ClipAction, 
     NormalizeObservation, TransformObservation,
