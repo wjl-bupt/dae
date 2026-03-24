@@ -242,7 +242,7 @@ def set_seed(seed):
     th.cuda.manual_seed_all(seed)
     th.backends.cudnn.deterministic = True
     th.backends.cudnn.benchmark = False
-    th.use_deterministic_algorithms(True)
+    # th.use_deterministic_algorithms(True)
 
 def finish(env, algo, steps):
     print("Finishing up...")
