@@ -27,6 +27,7 @@ import torch.nn as nn
 import gymnasium as gym
 import random
 import torch as th
+th.set_num_threads(1)
 from gymnasium.wrappers import (
     FlattenObservation, RecordEpisodeStatistics, ClipAction, 
     NormalizeObservation, TransformObservation,

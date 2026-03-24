@@ -235,7 +235,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         :param deterministic: Whether to sample or use deterministic actions
         :return: action, value and log probability of the action
         """
-        obs = obs.float()
+        # obs = obs.float()
         latent_pi, _ = self._extract_latent(obs)
         mean_actions, log_std = self.calc_meam_std(latent_pi)
 

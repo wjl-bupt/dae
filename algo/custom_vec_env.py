@@ -101,6 +101,7 @@ class CustomVecEnv(VecEnv):
             start_method = "forkserver" if forkserver_available else "spawn"
             # NOTE(junweiluo): 继承虚拟环境，避免出现bug"AssertionError: OpenCV is not installed, you can do pip install opencv-python"
             # start_method = "fork"
+        print(f"CustomVecEnv start_method: {start_method}")
         ctx = mp.get_context(start_method)
 
         self.threads = min(threads, len(env_fns))
