@@ -1,5 +1,5 @@
 import torch as th
-th.set_num_threads(32)
+th.set_num_threads(1)
 th.set_num_interop_threads(1)
 
 from stable_baselines3 import PPO
