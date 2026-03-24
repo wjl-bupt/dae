@@ -105,21 +105,9 @@ class CustomPPO(OnPolicyAlgorithm):
         gae_like_lambda: float = 0.0,
         use_sub_action_ratio: bool = True,
         corr_coef: float = 0.2,
-        # NOTE(junweiluo):
-        # use_wandb: bool = False,
-        # wandb_project: Optional[str] = None,
-        # wandb_run_name: Optional[str] = None,
-        # wandb_group_name : Optional[str] = None,
+        use_huber_loss: bool = True,
         
     ):  
-        # NOTE(junweiluo): use wandb to log experiment metrics.
-        # if use_wandb:
-        #     wandb.init(
-        #         project = wandb_project,
-        #         name = wandb_run_name,
-        #         group = wandb_group_name,
-        #         sync_tensorboard = True,
-        #     )
         super(CustomPPO, self).__init__(
             policy,
             env,
@@ -139,7 +127,6 @@ class CustomPPO(OnPolicyAlgorithm):
             # NOTE(junweiluo)： 新版本的sb需要注释掉这个参数
             # create_eval_env=create_eval_env,
             seed=seed,
-            
             _init_setup_model=False,
             # NOTE(junweiluo): 
             supported_action_spaces=(spaces.Box, ),
@@ -160,6 +147,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self.use_sub_action_ratio = use_sub_action_ratio
         self.learning_rate_vf = learning_rate_vf
         self.corr_coef = corr_coef
+        self.use_huber_loss = use_huber_loss
 
         if not shared:
             warnings.warn(
@@ -307,90 +295,70 @@ class CustomPPO(OnPolicyAlgorithm):
             update_learning_rate(optimizer, new_lr)
         self.logger.record(f"train/learning_rate{suffix}", new_lr)
 
-        
-
     def _normalize_advantage(self, advantages, policies, eps=1e-8):
 
         return (advantages - advantages.mean() ) / (advantages.std() + eps)
 
     def _value_loss(self, rewards, advantages, values, lasts):
-        # loss = th.cat(
-        #     [
-        #         (
-        #             self.discount_matrix[: len(r), : len(r)].matmul(r)
-        #             - self.discount_matrix[: len(a), : len(a)].matmul(a)
-        #             + l * self.discount_vector[-len(r) :]
-        #             - v
-        #         ).square()
-        #         for r, a, v, l in zip(rewards, advantages, values, lasts)
-        #     ]
-        # ).mean()
+        # use dae original mse loss
+        if self.use_huber_loss == False:
+            loss = th.cat(
+                [
+                    (
+                        self.discount_matrix[: len(r), : len(r)].matmul(r)
+                        - self.discount_matrix[: len(a), : len(a)].matmul(a)
+                        + l * self.discount_vector[-len(r) :]
+                        - v
+                    ).square()
+                    for r, a, v, l in zip(rewards, advantages, values, lasts)
+                ]
+            ).mean()
+            # Alignment function return.
+            return loss, 0.0
+        # use Adaptive Scale Huber Loss
+        # \beta = Std(G_t)
+        # Loss = th.nn.functional.smooth_l1_loss
+        else:
+            preds = []
+            targets = []
+            for r, a, v, l in zip(rewards, advantages, values, lasts):
+                target = (
+                    self.discount_matrix[: len(r), : len(r)].matmul(r)
+                    - self.discount_matrix[: len(a), : len(a)].matmul(a)
+                    + l * self.discount_vector[-len(r):]
+                )
 
-        preds = []
-        targets = []
+                preds.append(v)
+                targets.append(target)
 
-        for r, a, v, l in zip(rewards, advantages, values, lasts):
-            target = (
-                self.discount_matrix[: len(r), : len(r)].matmul(r)
-                - self.discount_matrix[: len(a), : len(a)].matmul(a)
-                + l * self.discount_vector[-len(r):]
-            )
+            preds = th.cat(preds)
+            targets = th.cat(targets)
+            beta = targets.std().detach().item()
+            loss = th.nn.functional.smooth_l1_loss(preds, targets, beta=beta)
 
-            preds.append(v)
-            targets.append(target)
-
-        preds = th.cat(preds)
-        targets = th.cat(targets)
-        beta = targets.std().detach()
-        loss = th.nn.functional.smooth_l1_loss(preds, targets, beta=beta)
-
-        return loss
+            return loss, beta
 
     def _policy_loss(
         self, advantages, log_policy, old_log_policy, actions, clip_range=None
     ):
 
         if self.full_action:
-            # with gradient
-            
-            # loss = -(advantages * th.exp(log_policy)).sum(dim=1).mean()
-            # loss = -(advantages * th.exp(log_policy)).mean()
-            
-            # with detach, only action-ratio keep gradients.
-            mask = th.zeros_like(log_policy, dtype=th.bool)
-            batch_idx = th.arange(log_policy.size(0), device=log_policy.device)
-            mask[batch_idx, actions.squeeze(-1)] = True
-            log_policy_ = th.where(mask, log_policy, log_policy.detach())
-            ratio = th.exp(log_policy_ - old_log_policy)
-            # 2025/11/21 10:00
-            # loss = -(advantages * th.exp(log_policy)).mean()
-            # 2025/11/21 16:40 这个可以跑出效果，detach掉其余动作的梯度
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-            policy_loss_1 = advantages * ratio
-            policy_loss_2 = advantages * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
-            policy_loss_3 = th.min(policy_loss_1, policy_loss_2)
-            loss = - th.min(policy_loss_3, 1.5 * advantages).mean()
-            # loss = -th.min(policy_loss_1, policy_loss_2).mean()
-            
-            # 2025/11/22 10:27 尝试不detach其他动作的梯度
-            # ratio = th.exp(log_policy - old_log_policy)
-            # policy_loss_1 = advantages * ratio
-            # policy_loss_2 = advantages * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
-            # loss = -th.min(policy_loss_1, policy_loss_2).mean()
+            # TODO(junweiluo): implement full-action ratio in mujoco
+            pass
         else:
             adv = advantages
             logp = log_policy
             old_logp = old_log_policy
-            ratio = th.exp(logp - old_logp)
             if self.use_sub_action_ratio:
-                ratio = ratio
+                ratio = th.exp(logp - old_logp)
                 #  / self.action_space.shape[0]
                 adv = adv.unsqueeze(-1)  / self.action_space.shape[0]
                 policy_loss_1 = adv * ratio
                 policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
                 loss = -th.min(policy_loss_1, policy_loss_2).mean()
             else:
-                ratio = th.prod(ratio, dim = 1)
+                log_ratio = (logp - old_logp).sum(dim = 1)
+                ratio = log_ratio.exp()
                 policy_loss_1 = adv * ratio
                 policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
                 loss = -th.min(policy_loss_1, policy_loss_2).mean()
@@ -526,7 +494,7 @@ class CustomPPO(OnPolicyAlgorithm):
                         rewards - advantages
                     ).split(lengths)
                     # pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
-                    main_value_loss = self._value_loss(
+                    main_value_loss, beta = self._value_loss(
                         rewards.split(lengths),
                         advantages.split(lengths),
                         values,
@@ -551,7 +519,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     advantages_ = advantages.detach().clone()
                     deltas = (rewards - old_advantages).split(lengths)
                     pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
-                    main_value_loss = self._value_loss(
+                    main_value_loss, beta = self._value_loss(
                         rewards.split(lengths),
                         advantages.split(lengths),
                         # values,
@@ -759,15 +727,6 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("train/explained_variance", explain_var.cpu().mean().item())
 
     def _train_separate(self) -> None:
-        
-        # corr loss coef
-        # max_corr_coef = 0.5
-        # cur_t = (1 - self._current_progress_remaining) / 0.5
-        # cur_t = max(0.0, min(1.0, cur_t))
-        # cur_t = cur_t * cur_t * (3 - 2 * cur_t)
-        # cur_corr_coef = cur_t * max_corr_coef
-        # cur_corr_coef = max_corr_coef * min(1.0, (1 - self._current_progress_remaining) * 2)
-        cur_corr_coef = max(0.05, self.corr_coef * self._current_progress_remaining)
         cur_corr_coef = self.corr_coef
         # Update optimizer learning rate
         self._update_learning_rate(
@@ -813,7 +772,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 values = values.flatten().split(lengths)
                 
                 pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
-                main_value_loss = self._value_loss(
+                main_value_loss, beta = self._value_loss(
                     rewards.split(lengths), 
                     advantages.split(lengths), 
                     pred_values.split(lengths), 
@@ -898,6 +857,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("scores/scores_std", scores.detach().cpu().std().item())
         
         self.logger.record("train/cur_corr_coef", cur_corr_coef)
+        self.logger.record("train/huber_loss_beta", beta)
         
         # 计算一下value network的评估是否准确
         targets = []
