@@ -749,6 +749,7 @@ class CustomPPO(OnPolicyAlgorithm):
         
         self.policy.zero_grad(set_to_none=True)
         self.policy.optimizer.zero_grad(set_to_none=True)
+        self.policy.optimizer_vf.zero_grad(set_to_none=True)
         for epoch in range(self.n_epochs_vf):
             for data in self.rollout_buffer.get_trajs(batch_size=self.batch_size_vf):
                 old_log_policies = data.old_log_policies
@@ -896,6 +897,7 @@ class CustomPPO(OnPolicyAlgorithm):
         #     self.rollout_buffer.advantages = (self.rollout_buffer.advantages - self.rollout_buffer.advantages.mean()) / (self.rollout_buffer.advantages.std() + 1e-8)
         self.policy.zero_grad(set_to_none=True)
         self.policy.optimizer.zero_grad(set_to_none=True)
+        self.policy.optimizer_vf.zero_grad(set_to_none=True)
         for epoch in range(self.n_epochs):
             for rollout_data in self.rollout_buffer.get(self.batch_size):
                 old_log_policies = rollout_data.old_log_policies

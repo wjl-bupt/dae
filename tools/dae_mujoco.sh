@@ -11,7 +11,7 @@ HPARAM_FILE="/root/dae/params/CustomPPO_mujoco.yml"
 THREADS=1
 LOGGING="--logging"
 USE_WANDB="--use_wandb"
-PROJECT="mujoco-sb3-dae11"
+PROJECT="mujoco-sb3-dae12"
 
 # Mujoco 环境列表
 ENVS=(
