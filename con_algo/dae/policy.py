@@ -204,8 +204,6 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
     
     def _predict(self, obs: th.Tensor, deterministic: bool = False) -> th.Tensor:
         
-
-        obs = obs.float()
         latent_pi, _ = self._extract_latent(obs)
         mean_actions, log_std = self.calc_meam_std(latent_pi)
         if deterministic:
@@ -260,9 +258,6 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         mu: th.Tensor, log_std: th.Tensor,
         noise: th.Tensor, epsilon:float = 1e-8,
     ) -> Tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
-        
-        
-        obs = obs.float()
         latent_pi, _ = self._extract_latent(obs)
         mean_actions = self.action_net(latent_pi)
         new_log_std = self.log_std

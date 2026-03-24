@@ -8,7 +8,7 @@ COMMIT_ID=$1
 
 ALGO="CustomPPO"
 HPARAM_FILE="/root/dae/params/CustomPPO_mujoco.yml"
-THREADS=16
+THREADS=1
 LOGGING="--logging"
 USE_WANDB="--use_wandb"
 PROJECT="mujoco-sb3-dae11"

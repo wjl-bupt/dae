@@ -1,3 +1,9 @@
+# make sure reproducibility
+import os
+os.environ["OMP_NUM_THREADS"] = str(1)
+os.environ["MKL_NUM_THREADS"] = str(1)
+os.environ["OPENBLAS_NUM_THREADS"] = str(1)
+os.environ["NUMEXPR_NUM_THREADS"] = str(1)
 import torch as th
 th.set_num_threads(1)
 th.set_num_interop_threads(1)
