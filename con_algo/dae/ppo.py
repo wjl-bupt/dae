@@ -449,13 +449,13 @@ class CustomPPO(OnPolicyAlgorithm):
         log_std = self.policy.log_std.detach()
         # log_std = th.clamp(log_std, -4, 2)
 
-        with th.no_grad():
-            self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size, gamma = self.gamma, gae_like_lambda = self.gae_like_lambda)        
+        # with th.no_grad():
+        #     self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size, gamma = self.gamma, gae_like_lambda = self.gae_like_lambda)        
 
 
         for epoch in range(self.n_epochs):
-            # with th.no_grad():
-            #     self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size)
+            with th.no_grad():
+                self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size)
             #     self.rollout_buffer.update_value(self.policy, batch_size =self.batch_size)
             ex_advs = []
             # if self.advantage_normalization:
@@ -505,7 +505,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     td_loss = 0.5 * (advantages - td_error).square().mean()
                     corr = ((advantages - advantages.mean()) * (td_error - td_error.mean())).mean() / (td_error.std(unbiased = False) * advantages.std(unbiased = False) + 1e-10)
                     td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
-                    value_loss = main_value_loss
+                    value_loss = main_value_loss + self.corr_coef * (1 - corr)
                     # advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
                 # discouple loss
                 else:
@@ -638,6 +638,8 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("train/td_loss", td_loss.detach().cpu().mean().item())
         self.logger.record("train/td_direct_corr", td_direct_corr.detach().cpu().mean().item())
         self.logger.record("train/rew_adv_delta", th.cat(deltas).detach().cpu().mean().item())
+        self.logger.record("train/cur_corr_coef", self.corr_coef)
+        self.logger.record("train/huber_loss_beta", beta)
         # advantage & td error correction
         # corr = th.corrcoef(th.stack([advantages, td_error]))[0,1]
 
@@ -701,7 +703,6 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("scores/scores_mean", scores.detach().cpu().mean().item())
         self.logger.record("scores/scores_min", scores.detach().cpu().min().item())
         self.logger.record("scores/scores_std", scores.detach().cpu().std().item())
-        
         # 计算一下value network的评估是否准确
         targets = []
         preds = []

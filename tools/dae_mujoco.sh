@@ -16,10 +16,10 @@ PROJECT="mujoco-sb3-dae12"
 # Mujoco 环境列表
 ENVS=(
     "HalfCheetah-v5"
+    "Walker2d-v5"
     "Ant-v5"
     # "HumanoidStandup-v5"
     "Swimmer-v5"
-    "Walker2d-v5"
     "Hopper-v5"
     "InvertedPendulum-v5"
     "InvertedDoublePendulum-v5"
