@@ -11,15 +11,15 @@ HPARAM_FILE="/root/dae/params/CustomPPO_mujoco.yml"
 THREADS=1
 LOGGING="--logging"
 USE_WANDB="--use_wandb"
-PROJECT="mujoco-sb3-dae12"
+PROJECT="mujoco-sb3-dae13"
 
 # Mujoco 环境列表
 ENVS=(
     "HalfCheetah-v5"
-    "Walker2d-v5"
     "Ant-v5"
     # "HumanoidStandup-v5"
     "Swimmer-v5"
+    "Walker2d-v5"
     "Hopper-v5"
     "InvertedPendulum-v5"
     "InvertedDoublePendulum-v5"

@@ -2,7 +2,7 @@ advantage_normalization: true
 batch_size: 4096
 batch_size_vf: 4096
 clip_range:
-    init: 0.1
+    init: 0.2
     final: 0
     ftype: "linear"
 ent_coef: 0.0
@@ -12,10 +12,10 @@ use_sub_action_ratio: false
 use_huber_loss: true
 dae_discouple_correction: false
 kl_coef: 0.0
-vf_coef: 0.6
+vf_coef: 0.5
 corr_coef: 0.1
 learning_rate:
-    init: 0.00025
+    init: 0.00015
     final: 0
     ftype: "linear"
 learning_rate_vf: 0.00010
