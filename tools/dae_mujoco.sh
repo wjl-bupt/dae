@@ -8,10 +8,15 @@ COMMIT_ID=$1
 
 ALGO="CustomPPO"
 HPARAM_FILE="/root/dae/params/CustomPPO_mujoco.yml"
+# 👇 新增：冻结配置
+SNAPSHOT_CFG=$(mktemp /logs/CustomPPO_mujoco_${COMMIT_ID}_XXXXXX.yml)
+cp $HPARAM_FILE $SNAPSHOT_CFG
+
+echo "Using config snapshot: $SNAPSHOT_CFG"
 THREADS=1
 LOGGING="--logging"
 USE_WANDB="--use_wandb"
-PROJECT="mujoco-sb3-dae14"
+PROJECT="mujoco-sb3-dae17"
 
 # Mujoco 环境列表
 ENVS=(
@@ -48,7 +53,7 @@ for ENV_ID in "${ENVS[@]}"; do
         CUDA_VISIBLE_DEVICES=0 \
         uv run python train.py \
             --algo $ALGO \
-            --hparam_file $HPARAM_FILE \
+            --hparam_file $SNAPSHOT_CFG \
             --envs $ENV_ID \
             --threads $THREADS \
             $LOGGING \
