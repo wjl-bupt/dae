@@ -192,14 +192,14 @@ def custom_build_wrapper(raw_reward_monitor, reward_minmax_normalization):
     return wrap
 
 # NOTE(junweiluo): add mujoco env maker
-def get_mujoco_env(e, envs, args, logdir, rew_minmax_norm = False):
-    if rew_minmax_norm == True:
-        # 不使用rms归一化奖励
-        norm_reward = False
-    else:
-        norm_reward = True
+def get_mujoco_env(e, envs, args, logdir):
+    # if rew_minmax_norm == True:
+    #     # 不使用rms归一化奖励
+    #     norm_reward = False
+    # else:
+    #     norm_reward = True
         
-    wrapper = custom_build_wrapper(raw_reward_monitor = True, reward_minmax_normalization = rew_minmax_norm)
+    # wrapper = custom_build_wrapper(raw_reward_monitor = True, reward_minmax_normalization = rew_minmax_norm)
     env = make_vec_env(
         env_id=e,
         n_envs=envs,
@@ -297,10 +297,10 @@ if __name__ == "__main__":
             algo_cls = QVPPO
             policy = QVActorCriticPolicy
         elif args.algo == "A2C":
-            from con_algo.a2c.a2c import CustomA2C
-            from con_algo.a2c.policy import CustomActorCriticPolicy as A2CPolicy
-            algo_cls = CustomA2C
-            policy = A2CPolicy
+            from con_algo.a2c.a2c import VanillaA2C
+            from con_algo.a2c.policy import SimBaFeaturesExtractor
+            algo_cls = VanillaA2C
+            policy = "MlpPolicy"
         get_env = get_mujoco_env
 
     hparam, nenvs, hparam_id = load_hparam(args.hparam_file)
@@ -320,12 +320,12 @@ if __name__ == "__main__":
         cur_timestamp = int(time())
         logdir = f"./logs/{args.algo}/{_env}/{args.run_id}_seed{args.seed}_{time_str}_{cur_timestamp}" if args.logging else None
 
-        if args.algo == "CustomPPO":
-            rew_minmax_norm = True
-        elif args.algo == "PPO":
-            rew_minmax_norm = False
+        # if args.algo == "CustomPPO":
+        #     rew_minmax_norm = True
+        # elif args.algo == "PPO":
+        #     rew_minmax_norm = False
 
-        env, frameskip = get_env(_env, nenvs, args, logdir, rew_minmax_norm)
+        env, frameskip = get_env(_env, nenvs, args, logdir)
         # env = VecMonitor(env)
         
         callbacks_list = []
@@ -367,7 +367,7 @@ if __name__ == "__main__":
         else:
             wandb_callback = None
         
-        if args.algo == "PPO":
+        if args.algo == "PPO" or args.algo == "A2C":
             policy_kwargs = dict(
                 features_extractor_class=SimBaFeaturesExtractor,
                 features_extractor_kwargs=dict(

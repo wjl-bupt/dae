@@ -8,7 +8,7 @@ COMMIT_ID=$1
 ALGO="PPO"
 HPARAM_FILE="/root/dae/params/PPO_mujoco.yml"
 # 👇 新增：冻结配置
-SNAPSHOT_CFG=$(mktemp /logs/PPO_mujoco_${COMMIT_ID}_XXXXXX.yml)
+SNAPSHOT_CFG=$(mktemp /root/dae/logs/PPO_mujoco_${COMMIT_ID}_XXXXXX.yml)
 cp $HPARAM_FILE $SNAPSHOT_CFG
 
 echo "Using config snapshot: $SNAPSHOT_CFG"
@@ -16,7 +16,7 @@ echo "Using config snapshot: $SNAPSHOT_CFG"
 THREADS=1
 LOGGING="--logging"
 USE_WANDB="--use_wandb"
-PROJECT="mujoco-sb3-dae17"
+PROJECT="lambda_dae"
 
 # Mujoco 环境列表
 ENVS=(
