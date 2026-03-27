@@ -301,6 +301,11 @@ if __name__ == "__main__":
             from con_algo.a2c.policy import SimBaFeaturesExtractor
             algo_cls = VanillaA2C
             policy = "MlpPolicy"
+        elif args.algo == "AMPPO":
+            from con_algo.amppo.amppo import AMPPO
+            from con_algo.a2c.policy import SimBaFeaturesExtractor
+            algo_cls = AMPPO
+            policy = "MlpPolicy"
         get_env = get_mujoco_env
 
     hparam, nenvs, hparam_id = load_hparam(args.hparam_file)
@@ -331,7 +336,7 @@ if __name__ == "__main__":
         callbacks_list = []
         commit_id = args.commit_id
         if args.use_wandb:
-            if args.algo == "PPO":
+            if args.algo == "PPO" or args.algo == "AMPPO":
                 use_full_action = False
                 nheads = 1
                 discouple = "null"
@@ -376,7 +381,7 @@ if __name__ == "__main__":
         else:
             wandb_callback = None
         
-        if args.algo == "PPO" or args.algo == "A2C":
+        if args.algo in  ["PPO", "A2C", "AMPPO"]:
             policy_kwargs = dict(
                 features_extractor_class=SimBaFeaturesExtractor,
                 features_extractor_kwargs=dict(
