@@ -7,7 +7,7 @@ clip_range:
     ftype: "linear"
 ent_coef: 0.0
 full_action: false
-gae_like_lambda: 0.98
+gae_like_lambda: 0.5
 use_sub_action_ratio: false
 use_huber_loss: true
 dae_discouple_correction: false

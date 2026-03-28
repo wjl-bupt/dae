@@ -295,8 +295,9 @@ class CustomPPO(OnPolicyAlgorithm):
             update_learning_rate(optimizer, new_lr)
         self.logger.record(f"train/learning_rate{suffix}", new_lr)
 
-    def _normalize_advantage(self, advantages, policies, eps=1e-8):
+    def _normalize_advantage(self, advantages, policies = None, eps=1e-8):
 
+        return advantages / (advantages.std() + eps)
         return (advantages - advantages.mean() ) / (advantages.std() + eps)
 
     def _value_loss(self, rewards, advantages, values, lasts):
@@ -773,11 +774,12 @@ class CustomPPO(OnPolicyAlgorithm):
                 # value loss
                 values = values.flatten().split(lengths)
                 
-                pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
+                # pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
                 main_value_loss, beta = self._value_loss(
                     rewards.split(lengths), 
                     advantages.split(lengths), 
-                    pred_values.split(lengths), 
+                    # pred_values.split(lengths), 
+                    values,
                     last_values,
                 )
                 td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = 0.99)
