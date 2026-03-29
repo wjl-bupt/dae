@@ -773,13 +773,12 @@ class CustomPPO(OnPolicyAlgorithm):
                 )
                 # value loss
                 values = values.flatten().split(lengths)
-                
-                # pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
+                pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
                 main_value_loss, beta = self._value_loss(
                     rewards.split(lengths), 
                     advantages.split(lengths), 
-                    # pred_values.split(lengths), 
-                    values,
+                    pred_values.split(lengths), 
+                    # values,
                     last_values,
                 )
                 td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = 0.99)
