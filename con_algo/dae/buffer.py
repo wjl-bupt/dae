@@ -1,3 +1,11 @@
+# -*- encoding: utf-8 -*-
+'''
+@File :buffer.py
+@Created-Time :2025-11-29 09:59:52
+@Author  :june
+@Description   : Direction Advantage Estimation
+@Modified-Time : 2025-11-29 09:59:52
+'''
 from typing import Optional, Union, List, NamedTuple, Generator
 from stable_baselines3.common.buffers import BaseBuffer
 from stable_baselines3.common.type_aliases import RolloutBufferSamples
@@ -16,21 +24,26 @@ gym.register_envs(ale_py)
 class CustomSamples(NamedTuple):
     observations: th.Tensor
     actions: th.Tensor
+    mu: th.Tensor
     rewards: th.Tensor
-    old_policies: th.Tensor
+    # old_policies: th.Tensor
     old_log_policies: th.Tensor
     advantages: th.Tensor
+    # Reparameter
+    noises: th.Tensor
 
 
 class CustomTrajSamples(NamedTuple):
     observations: th.Tensor
     actions: th.Tensor
+    mu: th.Tensor
     rewards: th.Tensor
-    old_policies: th.Tensor
     old_log_policies: th.Tensor
     values: th.Tensor
     last_values: List
     lengths: List
+    advantages: th.Tensor
+    noises: th.Tensor
 
 
 class CustomBuffer(BaseBuffer):
@@ -60,15 +73,20 @@ class CustomBuffer(BaseBuffer):
         self._observations = np.zeros(
             (self.buffer_size, self.n_envs) + self.obs_shape, dtype=np.float32
         )
-        self._actions = np.zeros((self.buffer_size, self.n_envs, 1), dtype=np.long)
+        # in continous space, action's dim >= 1
+        self._actions = np.zeros((self.buffer_size, self.n_envs, self.action_dim), dtype=np.float32)
+        self._mu = np.zeros((self.buffer_size, self.n_envs, self.action_dim), dtype=np.float32)
         self._rewards = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
-        self._policies = np.zeros(
-            (self.buffer_size, self.n_envs, self.action_space.n), dtype=np.float32
-        )
+        # TODO(junweiluo): check
+        # # self._policies = np.zeros(
+        #     (self.buffer_size, self.n_envs, self.action_space.n), dtype=np.float32
+        # )
         self._log_policies = np.zeros(
-            (self.buffer_size, self.n_envs, self.action_space.n), dtype=np.float32
+            (self.buffer_size, self.n_envs, self.action_dim), dtype=np.float32
         )
         self._values = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
+        
+        self._noise = np.zeros((self.buffer_size, self.n_envs, self.action_dim), dtype=np.float32)
         self.reset()
 
     def reset(self) -> None:
@@ -78,8 +96,10 @@ class CustomBuffer(BaseBuffer):
         self._observations.fill(0)
         self._actions.fill(0)
         self._rewards.fill(0)
-        self._policies.fill(0)
+        # # self._policies.fill(0)
+        self._mu.fill(0)
         self._log_policies.fill(0)
+        self._noise.fill(0)
         self.last_pos = [0] * self.n_envs
         self.trajectories = []
         self.lengths = []
@@ -90,11 +110,12 @@ class CustomBuffer(BaseBuffer):
         self,
         obs: np.ndarray,
         action: np.ndarray,
+        mu: np.ndarray,
         reward: np.ndarray,
         done: np.ndarray,
-        policy: th.Tensor,
         log_policy: th.Tensor,
         value: th.Tensor,
+        noise: th.Tensor,
     ) -> None:
         """
         :param obs: Observation
@@ -107,15 +128,17 @@ class CustomBuffer(BaseBuffer):
 
         # Reshape needed when using multiple envs with discrete observations
         # as numpy cannot broadcast (n_discrete,) to (n_discrete, 1)
-        if isinstance(self.observation_space, spaces.Discrete):
-            obs = obs.reshape((self.n_envs,) + self.obs_shape)
+        # if isinstance(self.observation_space, spaces.Discrete):
+        #     obs = obs.reshape((self.n_envs,) + self.obs_shape)
 
         self._observations[self.pos] = obs
         self._actions[self.pos] = action
+        self._mu[self.pos] = mu
         self._rewards[self.pos] = reward
-        self._policies[self.pos] = policy.cpu().numpy()
+        # # self._policies[self.pos] = policy.cpu().numpy()
         self._log_policies[self.pos] = log_policy.cpu().numpy()
         self._values[self.pos] = value.cpu().flatten().numpy()
+        self._noise[self.pos] = noise.cpu().numpy()
         self.pos += 1
         for eid, d in enumerate(done):
             if d:
@@ -124,10 +147,11 @@ class CustomBuffer(BaseBuffer):
                     (
                         self._observations[last_p:p, eid],
                         self._actions[last_p:p, eid],
+                        self._mu[last_p:p, eid],
                         self._rewards[last_p:p, eid],
-                        self._policies[last_p:p, eid],
                         self._log_policies[last_p:p, eid],
                         self._values[last_p:p, eid],
+                        self._noise[last_p:p, eid],
                         0,
                     )
                 )
@@ -144,30 +168,37 @@ class CustomBuffer(BaseBuffer):
                     (
                         self._observations[last_p:, eid],
                         self._actions[last_p:, eid],
+                        self._mu[last_p:, eid],
                         self._rewards[last_p:, eid],
-                        self._policies[last_p:, eid],
                         self._log_policies[last_p:, eid],
                         self._values[last_p:, eid],
+                        self._noise[last_p:, eid],
                         last_values[eid, 0].item(),
                     )
                 )
 
-        _obs, _act, _rew, _pol, _lpol, _val, _last = zip(*self.trajectories)
+
+        _obs, _act, _mu, _rew, _lpol, _val, _noise, _last = zip(*self.trajectories)
 
         self.lengths = [len(o) for o in _obs]
         self.observations = th.as_tensor(np.concatenate(_obs), device=self.device)
         self.actions = th.as_tensor(np.concatenate(_act), device=self.device)
+        self.mu = th.as_tensor(np.concatenate(_mu), device=self.device)
         self.rewards = th.as_tensor(np.concatenate(_rew), device=self.device)
-        self.policies = th.as_tensor(np.concatenate(_pol), device=self.device)
+        # self.policies = th.as_tensor(np.concatenate(_pol), device=self.device)
         self.log_policies = th.as_tensor(np.concatenate(_lpol), device=self.device)
         self.values = th.as_tensor(np.concatenate(_val), device=self.device)
+        # NOTE(junweiluo): 2025/12/22 增加一个变量
+        self.noises = th.as_tensor(np.concatenate(_noise), device=self.device)
         self.last_values = list(_last)
 
         self.start_indices = np.insert(np.cumsum(self.lengths), 0, 0)[:-1]
         self.end_indices = np.cumsum(self.lengths)
         self.advantages = th.empty(
-            self.policies.shape, dtype=th.float32, device=self.device
+            self.rewards.shape, dtype=th.float32, device=self.device
         )
+        
+
 
     def update_value(self, policy, batch_size=1024):
         self.values = th.empty(
@@ -179,22 +210,45 @@ class CustomBuffer(BaseBuffer):
             end = min(start + batch_size, size)
             data = self._get_samples(th.arange(start, end, device=self.device))
             with th.no_grad():
-                v, _ = policy.predict_value(data.observations, data.old_policies)
+                v, _ = policy.predict_value(data.observations)
             self.values[start:end] = v
             start = end
-        self.values = self.values.cpu()
+        self.values = self.values
 
-    def update_advantage(self, policy, batch_size=1024):
+    def update_advantage(self, policy, batch_size=1024, log_std = None, gamma = 0.99, gae_like_lambda = 1.0):
         start = 0
         size = len(self.observations)
-        while start < size:
-            end = min(start + batch_size, size)
-            _obs = self.observations[start:end]
-            _pol = self.policies[start:end]
+        for _, (s_ind, e_ind) in enumerate(zip(self.start_indices, self.end_indices)):
+            traj_obs = self.observations[s_ind:e_ind]
+            traj_actions = self.actions[s_ind:e_ind]
+            traj_mu = self.mu[s_ind:e_ind]
+            traj_noise = self.noises[s_ind:e_ind]
             with th.no_grad():
-                _, adv = policy.predict_value(_obs, _pol)
-            self.advantages[start:end] = adv
-            start = end
+                _, advantages = policy.predict_value(traj_obs, traj_actions, traj_mu, log_std, traj_noise)
+            lens = len(advantages)
+            gl = gamma * gae_like_lambda
+            for t in range(lens-2, -1, -1):
+                advantages[t] = advantages[t] + gl * advantages[t+1]
+            self.advantages[s_ind:e_ind] = advantages
+        
+        # while start < size:
+        #     end = min(start + batch_size, size)
+        #     _obs = self.observations[start:end]
+        #     # NOTE(junweiluo): here we use mu instead of policy
+        #     _act = self.actions[start:end]
+        #     _mu = self.mu[start:end]
+        #     _noise = self.noises[start:end]
+        #     with th.no_grad():
+        #         _, adv = policy.predict_value(_obs, _act, _mu, log_std, _noise)
+        #     lens = len(adv)
+        #     last_advlam = adv[-1]
+        #     gl = gamma * gae_like_lambda
+        #     for t in range(lens-2, -1, -1):
+        #         adv[t] = adv[t] + gl * adv[t+1]
+        #     self.advantages[start:end] = adv
+        #     start = end
+        
+        
 
     def get(
         self, batch_size: Optional[int] = None
@@ -214,14 +268,19 @@ class CustomBuffer(BaseBuffer):
             start_idx += batch_size
 
     def _get_samples(self, indices) -> CustomSamples:
+        
+        # raw_adv = self.advantages.index_select(dim=0, index=indices)
+        # norm_adv = self.advantages - self.advantages.mean() / (raw_adv.mean() )
 
         data = (
             self.observations.index_select(dim=0, index=indices),
             self.actions.index_select(dim=0, index=indices),
+            self.mu.index_select(dim=0, index=indices),
             self.rewards.index_select(dim=0, index=indices),
-            self.policies.index_select(dim=0, index=indices),
+            # self.policies.index_select(dim=0, index=indices),
             self.log_policies.index_select(dim=0, index=indices),
             self.advantages.index_select(dim=0, index=indices),
+            self.noises.index_select(dim=0, index=indices),
         )
 
         return CustomSamples(*tuple(data))
@@ -233,6 +292,7 @@ class CustomBuffer(BaseBuffer):
             batch_size = len(self.observations)
 
         indices = np.random.permutation(len(self.start_indices))
+        indices = np.arange(len(self.start_indices))
 
         start_idx = 0
         while start_idx < len(indices):
@@ -249,7 +309,9 @@ class CustomBuffer(BaseBuffer):
 
     def _get_traj_samples(self, indices) -> CustomTrajSamples:
 
-        _obs, _act, _rew, _pol, _lpol, _val, _last, splits = (
+        _obs, _act, _mu, _rew, _lpol, _val, _last, splits, _adv, _noise = (
+            [],
+            [],
             [],
             [],
             [],
@@ -263,20 +325,28 @@ class CustomBuffer(BaseBuffer):
             start, end = self.start_indices[idx], self.end_indices[idx]
             _obs.append(self.observations[start:end])
             _act.append(self.actions[start:end])
+            _mu.append(self.mu[start:end])
             _rew.append(self.rewards[start:end])
-            _pol.append(self.policies[start:end])
             _lpol.append(self.log_policies[start:end])
             _val.append(self.values[start:end])
             _last.append(self.last_values[idx])
             splits.append(end - start)
+            _adv.append(self.advantages[start:end])
+            # NOTE(junweiluo): reparameter dae
+            _noise.append(self.noises[start:end])
 
         return CustomTrajSamples(
             th.cat(_obs),
             th.cat(_act),
+            th.cat(_mu),
             th.cat(_rew),
-            th.cat(_pol),
             th.cat(_lpol),
             th.cat(_val),
             _last,
             splits,
+            th.cat(_adv),
+            th.cat(_noise)
         )
+
+
+

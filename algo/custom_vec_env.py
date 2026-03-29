@@ -1,8 +1,8 @@
 import multiprocessing as mp
 from collections import OrderedDict
 from typing import Any, Callable, List, Optional, Sequence, Tuple, Type, Union
-
-import gym
+from itertools import chain
+import gymnasium as gym
 import numpy as np
 
 from stable_baselines3.common.vec_env.base_vec_env import (
@@ -56,6 +56,9 @@ def _worker(
                 remote.send(setattr(env, data[0], data[1]))
             elif cmd == "is_wrapped":
                 remote.send(env.env_is_wrapped(data))
+            # NOTE(junweiluo): test render_mode
+            elif cmd == "get_render_mode":
+                remote.send(env.render_mode)
             else:
                 raise NotImplementedError(f"`{cmd}` is not implemented in the worker")
         except EOFError:
@@ -96,6 +99,9 @@ class CustomVecEnv(VecEnv):
             # a `if __name__ == "__main__":`)
             forkserver_available = "forkserver" in mp.get_all_start_methods()
             start_method = "forkserver" if forkserver_available else "spawn"
+            # NOTE(junweiluo): 继承虚拟环境，避免出现bug"AssertionError: OpenCV is not installed, you can do pip install opencv-python"
+            # start_method = "fork"
+        print(f"CustomVecEnv start_method: {start_method}")
         ctx = mp.get_context(start_method)
 
         self.threads = min(threads, len(env_fns))
@@ -144,7 +150,7 @@ class CustomVecEnv(VecEnv):
             np.concatenate(rews),
             np.concatenate(dones),
             tuple(sum(infos, [])),
-        )
+        ) 
 
     def seed(self, seed: Optional[int] = None) -> List[Union[None, int]]:
         for idx, (remote, sli) in enumerate(zip(self.remotes, self.slicing)):
@@ -178,12 +184,32 @@ class CustomVecEnv(VecEnv):
         return sum(imgs, [])
 
     def get_attr(self, attr_name: str, indices: VecEnvIndices = None) -> List[Any]:
-        raise NotImplementedError()
+        """ TODO(junweiluo): implement get_attr method. """
+        results = [None] * self.num_envs
+        targets = self._get_target_remotes(indices = indices)
+        for remote, rel_idx in targets:
+            remote.send(("get_attr", attr_name))
+            vals = remote.recv()
+            # NOTE(junweiluo): 这里假设所有环境的属性值相同，如果不相同需要修改代码以支持返回不同的值
+            # 对齐较新版本的SB3
+            if not isinstance(vals, (list, tuple)):
+                vals = [vals] * len(rel_idx)
+            for idx, val in zip(rel_idx, vals):
+                results[idx] = val
+        return results
+        
+        # raise NotImplementedError()
 
     def set_attr(
         self, attr_name: str, value: Any, indices: VecEnvIndices = None
     ) -> None:
-        raise NotImplementedError()
+
+        targets = self._get_target_remotes(indices)
+        for remote, rel_idxs in targets:
+            remote.send(("set_attr", (attr_name, value)))
+            remote.recv()  # 确保同步
+            
+        # raise NotImplementedError()
 
     def env_method(
         self,
@@ -192,7 +218,17 @@ class CustomVecEnv(VecEnv):
         indices: VecEnvIndices = None,
         **method_kwargs,
     ) -> List[Any]:
-        raise NotImplementedError()
+
+        results = [None] * self.num_envs
+        targets = self._get_target_remotes(indices)
+        for remote, rel_idxs in targets:
+            remote.send(("env_method", (method_name, method_args, method_kwargs)))
+            vals = remote.recv()
+            for idx, val in zip(rel_idxs, vals):
+                results[idx] = val
+        return results
+    
+        # raise NotImplementedError()
 
     def env_is_wrapped(
         self, wrapper_class: Type[gym.Wrapper], indices: VecEnvIndices = None
@@ -202,4 +238,26 @@ class CustomVecEnv(VecEnv):
         return sum([remote.recv() for remote in self.remotes], [])
 
     def _get_target_remotes(self, indices: VecEnvIndices) -> List[Any]:
-        raise NotImplementedError()
+
+        """
+        根据 indices 返回对应的远程进程和环境在子进程中的位置
+        """
+        if indices is None:
+            # 默认所有环境
+            target_remotes = list(self.remotes)
+            env_indices = list(chain.from_iterable(range(sli.start, sli.stop) for sli in self.slicing))
+        else:
+            # 支持 int 或 list/array
+            if isinstance(indices, int):
+                indices = [indices]
+            env_indices = list(indices)
+            target_remotes = []
+            for sli, remote in zip(self.slicing, self.remotes):
+                # 获取当前远程负责的环境索引
+                idxs = [i for i in env_indices if i in range(sli.start, sli.stop)]
+                if idxs:
+                    target_remotes.append((remote, [i - sli.start for i in idxs]))
+            # 返回远程和相对索引
+            return target_remotes
+        return list(zip(self.remotes, [list(range(sli.start, sli.stop)) for sli in self.slicing]))
+        # raise NotImplementedError()

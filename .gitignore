@@ -1,0 +1,10 @@
+wandb/*
+logs/*
+__pycache__/
+*.py[cod]
+
+# 虚拟环境
+.venv/
+
+# 忽略plots下的文件
+plots/

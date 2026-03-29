@@ -1,0 +1,22 @@
+[project]
+name = "dae"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ale>=0.8.4",
+    "ale-py>=0.11.2",
+    "autorom[accept-rom-license]>=0.6.1",
+    "gymnasium[accept-rom-license,atari,mujoco]>=1.2.2",
+    "loguru>=0.7.3",
+    "minatar>=1.0.15",
+    "numpy>=2.3.5",
+    "opencv-python>=4.11.0.86",
+    "opencv-python-headless>=4.11.0.86",
+    "pyyaml>=6.0.3",
+    "stable-baselines3>=2.7.0",
+    "tensorboard>=2.20.0",
+    "torch>=2.9.1",
+    "wandb>=0.23.0",
+]

@@ -1,0 +1,110 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "DAE: Atari",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--algo", "CustomPPO", 
+                "--hparam_file", "/root/dae/params/CustomPPO_atari_debugger.yml", 
+                "--envs", "ALE/Breakout-v5", 
+                "--threads", "8"
+            ]
+        },
+        {
+            "name": "DAE: Continous Space",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--algo", "CustomPPO", 
+                "--hparam_file", "${workspaceFolder}/params/CustomPPO_mujoco_debugger.yml", 
+                "--envs", "Humanoid-v5", 
+                "--threads", "4",
+                "--continous",
+                // "--use_wandb",
+                // "--logging",
+                // "--project", "callback-test",
+                
+            ],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "2",
+            }
+            
+        },
+
+        {
+            "name": "PPO: Continous Space",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--algo", "PPO", 
+                "--hparam_file", "${workspaceFolder}/params/PPO_mujoco_debugger.yml", 
+                "--envs", "Humanoid-v5", 
+                "--threads", "4",
+                "--continous",
+                "--use_wandb",
+                "--logging",
+                "--project", "callback-test",
+                
+            ],
+            "justMyCode": false,
+        },
+
+        {
+            "name": "A2C: Continous Space",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--algo", "A2C", 
+                "--hparam_file", "${workspaceFolder}/params/A2C_mujoco_debugger.yml", 
+                "--envs", "Humanoid-v5", 
+                "--threads", "4",
+                "--continous",
+                // "--use_wandb",
+                // "--logging",
+                // "--project", "callback-test",
+                
+            ],
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "2",
+            }
+        },
+
+        {
+            "name": "AMPPO: Continous Space",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--algo", "AMPPO", 
+                "--hparam_file", "${workspaceFolder}/params/AMPPO_mujoco_debugger.yml", 
+                "--envs", "Humanoid-v5", 
+                "--threads", "4",
+                "--continous",
+                "--use_wandb",
+                "--logging",
+                "--project", "callback-test",
+                
+            ],
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "2",
+            }
+        },
+
+    ]
+}

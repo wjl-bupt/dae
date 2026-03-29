@@ -1,0 +1,28 @@
+batch_size: 4096
+vf_coef: 0.5
+ent_coef: 0.0
+clip_range: 
+    init: 0.1
+    final: 0
+    ftype: "linear"
+clip_range_vf: 0.2
+learning_rate:
+    init: 0.00015
+    final: 0
+    ftype: "linear"
+n_epochs: 6
+n_steps: 128
+nenvs: 32
+# AMPPO Specific Param
+dynago_tau: 1.25
+dynago_p_star: 0.10
+dynago_kappa: 2.0
+dynago_eta: 0.3
+dynago_rho: 0.1
+dynago_eps: 1e-5
+dynago_alpha_min: 1e-12
+dynago_alpha_max: 1e12
+dynago_rho_sat: 0.98
+dynago_alpha_A_init: 1.0
+dynago_prev_sat_A_init: 0.10
+dynago_v_shift: 0.0

@@ -1,19 +1,18 @@
-advantage_normalization: true
-batch_size: 256
+batch_size: 32
 clip_range:
     init: 0.1
     final: 0
     ftype: "linear"
+vf_coef: 0.5
 ent_coef: 0.01
-full_action: false
-kl_coef: 0.0
-vf_coef: 1.5
+clip_range_vf:
+    init: 0.2
+    final: 0
+    ftype: "linear"
 learning_rate:
     init: 0.00025
     final: 0
     ftype: "linear"
 n_epochs: 6
 n_steps: 128
-shared: true
-features_extractor: "minatar"
-nenvs: 8
+nenvs: 4

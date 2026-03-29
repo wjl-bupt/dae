@@ -1,12 +1,13 @@
 import os
 from typing import Optional
 
+import wandb
 import time
 import numpy as np
 
-import gym
-from gym import spaces
-from gym.envs import register
+import gymnasium as gym
+from gymnasium import spaces
+from gymnasium.envs import register
 from minatar import Environment
 
 from stable_baselines3.common.utils import get_linear_fn
@@ -16,6 +17,8 @@ from stable_baselines3.common.vec_env.base_vec_env import (
     VecEnvStepReturn,
     VecEnvWrapper,
 )
+# NOTE(junweluo): 
+from stable_baselines3.common.callbacks import BaseCallback
 
 
 class BaseEnv(gym.Env):
@@ -210,6 +213,8 @@ class VecLogger(VecEnvWrapper):
 
         self.scores = []
         self.steps = 0
+        # NOTE(junweiluo): 增加一个参数来记录raw rewards
+        self.raw_scores = []
 
     def reset(self) -> VecEnvObs:
         obs = self.venv.reset()
@@ -235,3 +240,45 @@ class VecLogger(VecEnvWrapper):
         if self.results_writer:
             self.results_writer.close()
         return self.venv.close()
+
+
+# NOTE(junweiluo): wandb callback
+class WanDBCallBack(BaseCallback):
+    def __init__(
+        self, 
+        project: str,
+        run_name: str = None,
+        group: str = None,
+        sync_tensorboard: bool = True,
+        verbose: int = 0
+    ):
+        super().__init__(verbose)
+        self.project = project
+        self.run_name = run_name
+        self.group = group
+        self.sync_tensorboard = sync_tensorboard
+    
+    def _on_training_start(self) -> None:
+        wandb.init(
+            project=self.project,
+            name=self.run_name,
+            group=self.group,
+            sync_tensorboard=self.sync_tensorboard
+        )
+    
+    def _on_rollout_start(self):
+        return super()._on_rollout_start()
+    
+    def _on_rollout_end(self):
+        return super()._on_rollout_end()
+    
+    def _on_step(self):
+        infos = self.locals.get("infos", [])
+        for info in infos:
+            if "episode" in info:
+                # 记录 episode return 到 wandb
+                wandb.log({"episodic_return": info["episode"]["r"]}, step=self.num_timesteps)
+        return True
+
+    def _on_training_end(self) -> None:
+        wandb.finish()

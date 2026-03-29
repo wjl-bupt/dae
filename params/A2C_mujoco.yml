@@ -1,0 +1,8 @@
+vf_coef: 0.5
+ent_coef: 0.0
+learning_rate:
+    init: 0.00015
+    final: 0
+    ftype: "linear"
+n_steps: 128
+nenvs: 32
