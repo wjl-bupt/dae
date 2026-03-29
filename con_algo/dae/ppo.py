@@ -297,7 +297,7 @@ class CustomPPO(OnPolicyAlgorithm):
 
     def _normalize_advantage(self, advantages, policies = None, eps=1e-8):
 
-        return advantages / (advantages.std() + eps)
+        # return advantages / (advantages.std() + eps)
         return (advantages - advantages.mean() ) / (advantages.std() + eps)
 
     def _value_loss(self, rewards, advantages, values, lasts):

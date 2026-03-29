@@ -10,7 +10,7 @@ learning_rate:
     init: 0.00015
     final: 0
     ftype: "linear"
-n_epochs: 10
+n_epochs: 6
 n_steps: 128
 nenvs: 32
 # AMPPO Specific Param
