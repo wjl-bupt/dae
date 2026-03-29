@@ -11,7 +11,7 @@ import math
 import torch as th
 import torch.nn as nn
 from functools import partial
-from typing import Optional, Tuple, Type, List, Union, Dict
+from typing import Optional, Tuple, Type, List, Union, Dict, Any
 import numpy as np 
 import gymnasium as gym
 # from functorch import vmap
@@ -45,6 +45,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         activation_fn : Optional[nn.Module] = nn.Tanh,
         nheads : int = 2,
         learning_rate_vf: float = 0.00015,
+        optimizer_kwargs: dict[str, Any] | None = None,
     ):
         self.nheads = nheads
         self.bins = 50
@@ -72,7 +73,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             features_extractor_kwargs=None,
             normalize_images=True,
             optimizer_class=th.optim.Adam,
-            optimizer_kwargs=None,
+            optimizer_kwargs=optimizer_kwargs,
         )
         # self.lr_vf = lr_schedule_vf(1) 
         self.high = th.from_numpy(self.action_space.high).float()
@@ -131,22 +132,11 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             hidden_dim = hidden_dim, activation = self.activate_func
         )
         self.value_net = nn.Linear(hidden_dim, 1)
-        # self.advantage_feature_extractor = SimBaEncoder(
-        #     input_dim = self.observation_space.shape[0], block_num = 2,
-        #     hidden_dim = hidden_dim, activation = self.advantage_activate_func,
-        # )
-        
-        # self.rank = self.nheads
-        # self.u_head = nn.Linear(hidden_dim, self.action_space.shape[0] * self.rank)
-        # self.b_head = nn.Linear(hidden_dim, self.action_space.shape[0])
-
         self.advantage_head = nn.Sequential(
             nn.Linear(hidden_dim + self.action_space.shape[0] , hidden_dim * 2),
             self.advantage_activate_func,
             nn.Linear(hidden_dim * 2, self.action_space.shape[0]),
         )
-        # self.log_sigma_state = nn.Linear(hidden_dim, 1)
-        # self.bs = nn.Linear(hidden_dim, 1)
 
         # Init weights: use orthogonal initialization
         # with small initial weight for the output
@@ -169,6 +159,9 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
 
         # Setup optimizer with initial learning rate
         # TODO(junweiluo) (self.lr_vf is not None) and 
+        optimizer_kwargs = dict()
+        if self.optimizer_class == th.optim.Adam:
+            optimizer_kwargs["eps"] = 1e-5
         if not self.shared_features_extractor:
             # self.modules_pi = nn.ModuleList([self.actor_feature_extractor, self.action_net, self.log_std])
             self.modules_pi = list(self.actor_feature_extractor.parameters()) \
@@ -184,7 +177,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             ])
             # self.lr_vf
             # we will use linear decay in ppo.py
-            self.optimizer_vf = Adam(
+            self.optimizer_vf = self.optimizer_class(
                 self.modules_vf.parameters(), lr = self.learning_rate_vf,
             )
         else:
