@@ -175,7 +175,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             # self.lr_vf
             # we will use linear decay in ppo.py
             self.optimizer_vf = self.optimizer_class(
-                self.modules_vf.parameters(), lr = self.learning_rate_vf, **self.optimizer_kwargs,
+                self.modules_vf.parameters(), lr = self.learning_rate_vf,
             )
         else:
             self.optimizer = self.optimizer_class(
