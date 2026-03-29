@@ -159,9 +159,6 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
 
         # Setup optimizer with initial learning rate
         # TODO(junweiluo) (self.lr_vf is not None) and 
-        optimizer_kwargs = dict()
-        if self.optimizer_class == th.optim.Adam:
-            optimizer_kwargs["eps"] = 1e-5
         if not self.shared_features_extractor:
             # self.modules_pi = nn.ModuleList([self.actor_feature_extractor, self.action_net, self.log_std])
             self.modules_pi = list(self.actor_feature_extractor.parameters()) \
@@ -178,7 +175,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             # self.lr_vf
             # we will use linear decay in ppo.py
             self.optimizer_vf = self.optimizer_class(
-                self.modules_vf.parameters(), lr = self.learning_rate_vf,
+                self.modules_vf.parameters(), lr = self.learning_rate_vf, **self.optimizer_kwargs,
             )
         else:
             self.optimizer = self.optimizer_class(
