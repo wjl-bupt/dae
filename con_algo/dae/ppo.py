@@ -980,8 +980,8 @@ class CustomPPO(OnPolicyAlgorithm):
                 entropy_losses.append(entropy_loss.item())
                 kl_divs.append(kl_div.item())
 
-            if kl_div >= 0.05:
-                break
+            # if kl_div >= 0.05:
+            #     break
 
         self.logger.record("advantage/advantage_mean", old_advantages.cpu().mean().item())
         self.logger.record("advantage/advantage_std", old_advantages.cpu().std().item())
