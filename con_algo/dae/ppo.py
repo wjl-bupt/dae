@@ -360,15 +360,23 @@ class CustomPPO(OnPolicyAlgorithm):
             else:
                 # NOTE(junweiluo): try dimension-wise clipping, which is more stable for high-dim action space
                 # we call it double clipping. paper is https://arxiv.org/abs/2211.13227
-                log_ratio = th.clamp(logp - old_logp, 
-                        th.log(th.tensor(1 - clip_range)).item(), th.log(th.tensor(1 + clip_range)).item()
-                    ).sum(dim = 1)
-                ratio = log_ratio.exp()
+                
+                # dimension-wise clipping
+                # log_ratio = th.clamp(logp - old_logp, 
+                #         th.log(th.tensor(1 - clip_range)).item(), th.log(th.tensor(1 + clip_range)).item()
+                #     ).sum(dim = 1)
+                # ratio = log_ratio.exp()
+                # policy_loss_1 = adv * ratio
+                # policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
+                # loss = -th.min(policy_loss_1, policy_loss_2).mean()
+                
+                # use simple policy optimization loss form. paper is 
+                log_ratio = logp - old_logp
+                ratio = log_ratio.sum(1).exp()
                 policy_loss_1 = adv * ratio
-                policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
-                loss = -th.min(policy_loss_1, policy_loss_2).mean()
+                policy_loss_2 = 0.5 * adv * (ratio - 1).square()
+                loss = - policy_loss_1.mean() + policy_loss_2.mean()
             
-
         return loss, ratio
 
     def _compute_gae_like_advantages_(self, raw_advantages, lengths): 
