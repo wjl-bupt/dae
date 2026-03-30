@@ -138,7 +138,8 @@ class SPO(PPO):
                 # policy_loss_1 = advantages * ratio
                 # policy_loss_2 = advantages * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
                 # policy_loss = -th.min(policy_loss_1, policy_loss_2).mean()
-                policy_loss = - (advantages * ratio - advantages.abs() * (ratio - 1).square() / (2 * max(clip_range, 1e-3))).mean()
+                
+                policy_loss = - (advantages * ratio - (advantages.abs() * (ratio - 1).square() / (2 * max(clip_range, 1e-3)))).mean()
 
                 # Logging
                 pg_losses.append(policy_loss.item())
