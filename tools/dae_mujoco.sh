@@ -16,7 +16,7 @@ echo "Using config snapshot: $SNAPSHOT_CFG"
 THREADS=1
 LOGGING="--logging"
 USE_WANDB="--use_wandb"
-PROJECT="lambda_dae"
+PROJECT="lambda_dae2"
 
 # Mujoco 环境列表
 ENVS=(

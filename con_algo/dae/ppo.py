@@ -366,18 +366,18 @@ class CustomPPO(OnPolicyAlgorithm):
                 #         th.log(th.tensor(1 - clip_range)).item(), th.log(th.tensor(1 + clip_range)).item()
                 #     ).sum(dim = 1)
                 
-                # log_ratio = logp - old_logp
-                # ratio = log_ratio.sum(1).exp()
-                # policy_loss_1 = adv * ratio
-                # policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
-                # loss = -th.min(policy_loss_1, policy_loss_2).mean()
-                
-                # use simple policy optimization loss form. paper is 
                 log_ratio = logp - old_logp
                 ratio = log_ratio.sum(1).exp()
                 policy_loss_1 = adv * ratio
-                policy_loss_2 = (adv.abs() * (ratio - 1).pow(2)) / (2 * max(clip_range, 1e-3))
-                loss = - (policy_loss_1 - policy_loss_2).mean()
+                policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
+                loss = -th.min(policy_loss_1, policy_loss_2).mean()
+                
+                # use simple policy optimization loss form. paper is 
+                # log_ratio = logp - old_logp
+                # ratio = log_ratio.sum(1).exp()
+                # policy_loss_1 = adv * ratio
+                # policy_loss_2 = (adv.abs() * (ratio - 1).pow(2)) / (2 * max(clip_range, 1e-3))
+                # loss = - (policy_loss_1 - policy_loss_2).mean()
             
         return loss, ratio
 

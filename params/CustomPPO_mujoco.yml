@@ -3,7 +3,7 @@ batch_size: 4096
 batch_size_vf: 4096
 clip_range:
     init: 0.1
-    final: 0.1
+    final: 0.0
     ftype: "linear"
 ent_coef: 0.0
 full_action: false
@@ -13,7 +13,7 @@ use_huber_loss: true
 dae_discouple_correction: false
 kl_coef: 0.0
 vf_coef: 0.5
-corr_coef: 0.0
+corr_coef: 0.05
 learning_rate:
     init: 0.00015
     final: 0
