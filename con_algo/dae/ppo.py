@@ -360,7 +360,9 @@ class CustomPPO(OnPolicyAlgorithm):
             else:
                 # NOTE(junweiluo): try dimension-wise clipping, which is more stable for high-dim action space
                 # we call it double clipping. paper is https://arxiv.org/abs/2211.13227
-                log_ratio = th.clamp(logp - old_logp, th.log(1 - clip_range), th.log(1 + clip_range)).sum(dim = 1)
+                log_ratio = th.clamp(logp - old_logp, 
+                        th.log(th.tensor(1 - clip_range)).item(), th.log(th.tensor(1 + clip_range)).item()
+                    ).sum(dim = 1)
                 ratio = log_ratio.exp()
                 policy_loss_1 = adv * ratio
                 policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
