@@ -376,7 +376,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 log_ratio = logp - old_logp
                 ratio = log_ratio.sum(1).exp()
                 policy_loss_1 = adv * ratio
-                policy_loss_2 = (adv.abs() * (ratio - 1).pow(2)) / (2 * 0.1)
+                policy_loss_2 = (adv.abs() * (ratio - 1).pow(2)) / (2 * max(clip_range, 1e-3))
                 loss = - (policy_loss_1 - policy_loss_2).mean()
             
         return loss, ratio

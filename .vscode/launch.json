@@ -106,5 +106,28 @@
             }
         },
 
+        {
+            "name": "SPO: Continous Space",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--algo", "SPO", 
+                "--hparam_file", "${workspaceFolder}/params/SPO_mujoco_debugger.yml", 
+                "--envs", "Humanoid-v5", 
+                "--threads", "4",
+                "--continous",
+                "--use_wandb",
+                "--logging",
+                "--project", "callback-test",
+                
+            ],
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "2",
+            }
+        },
+
     ]
 }

@@ -306,6 +306,11 @@ if __name__ == "__main__":
             from con_algo.a2c.policy import SimBaFeaturesExtractor
             algo_cls = AMPPO
             policy = "MlpPolicy"
+        elif args.algo == "SPO":
+            from con_algo.spo.spo import SPO
+            from con_algo.spo.policy import SimBaFeaturesExtractor
+            algo_cls = SPO
+            policy = "MlpPolicy"
         get_env = get_mujoco_env
 
     hparam, nenvs, hparam_id = load_hparam(args.hparam_file)
@@ -325,18 +330,13 @@ if __name__ == "__main__":
         cur_timestamp = int(time())
         logdir = f"./logs/{args.algo}/{_env}/{args.run_id}_seed{args.seed}_{time_str}_{cur_timestamp}" if args.logging else None
 
-        # if args.algo == "CustomPPO":
-        #     rew_minmax_norm = True
-        # elif args.algo == "PPO":
-        #     rew_minmax_norm = False
-
         env, frameskip = get_env(_env, nenvs, args, logdir)
         # env = VecMonitor(env)
         
         callbacks_list = []
         commit_id = args.commit_id
         if args.use_wandb:
-            if args.algo == "PPO" or args.algo == "AMPPO":
+            if args.algo == "PPO" or args.algo == "AMPPO" or args.algo == "SPO":
                 use_full_action = False
                 nheads = 1
                 discouple = "null"
