@@ -365,7 +365,9 @@ class CustomPPO(OnPolicyAlgorithm):
                 # log_ratio = th.clamp(logp - old_logp, 
                 #         th.log(th.tensor(1 - clip_range)).item(), th.log(th.tensor(1 + clip_range)).item()
                 #     ).sum(dim = 1)
-                # ratio = log_ratio.exp()
+                
+                # log_ratio = logp - old_logp
+                # ratio = log_ratio.sum(1).exp()
                 # policy_loss_1 = adv * ratio
                 # policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
                 # loss = -th.min(policy_loss_1, policy_loss_2).mean()
@@ -374,8 +376,8 @@ class CustomPPO(OnPolicyAlgorithm):
                 log_ratio = logp - old_logp
                 ratio = log_ratio.sum(1).exp()
                 policy_loss_1 = adv * ratio
-                policy_loss_2 = 0.5 * adv * (ratio - 1).square()
-                loss = - policy_loss_1.mean() + policy_loss_2.mean()
+                policy_loss_2 = (adv.abs() * (ratio - 1).pow(2)) / (2 * 0.1)
+                loss = - (policy_loss_1 - policy_loss_2).mean()
             
         return loss, ratio
 
@@ -978,8 +980,8 @@ class CustomPPO(OnPolicyAlgorithm):
                 entropy_losses.append(entropy_loss.item())
                 kl_divs.append(kl_div.item())
 
-            # if kl_div >= 0.05:
-            #     break
+            if kl_div >= 0.05:
+                break
 
         self.logger.record("advantage/advantage_mean", old_advantages.cpu().mean().item())
         self.logger.record("advantage/advantage_std", old_advantages.cpu().std().item())
