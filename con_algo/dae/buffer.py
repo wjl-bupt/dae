@@ -215,7 +215,7 @@ class CustomBuffer(BaseBuffer):
             start = end
         self.values = self.values
 
-    def update_advantage(self, policy, batch_size=1024, log_std = None, gamma = 0.99, gae_like_lambda = 1.0):
+    def update_advantage(self, policy, batch_size=1024, log_std = None, gamma = 0.99, gae_like_lambda = 1.0, use_gae_like = False):
         start = 0
         size = len(self.observations)
         for _, (s_ind, e_ind) in enumerate(zip(self.start_indices, self.end_indices)):
@@ -225,11 +225,14 @@ class CustomBuffer(BaseBuffer):
             traj_noise = self.noises[s_ind:e_ind]
             with th.no_grad():
                 _, advantages = policy.predict_value(traj_obs, traj_actions, traj_mu, log_std, traj_noise)
-            lens = len(advantages)
-            gl = gamma * gae_like_lambda
-            for t in range(lens-2, -1, -1):
-                advantages[t] = advantages[t] + gl * advantages[t+1]
+            if use_gae_like:
+                lens = len(advantages)
+                gl = gamma * gae_like_lambda
+                for t in range(lens-2, -1, -1):
+                    advantages[t] = advantages[t] + gl * advantages[t+1]
             self.advantages[s_ind:e_ind] = advantages
+        
+        
         
         # while start < size:
         #     end = min(start + batch_size, size)
@@ -349,4 +352,19 @@ class CustomBuffer(BaseBuffer):
         )
 
 
+    def _get_huber_loss_beta(self, discount_matrix, discount_vector):
+        traj_rew = self.rewards.split(self.lengths)
+        traj_adv = self.advantages.split(self.lengths)
+        traj_last_value = self.last_values
+        targets = []
+        for r, a, l in zip(traj_rew, traj_adv, traj_last_value):
+            target = (
+                discount_matrix[: len(r), : len(r)].matmul(r)
+                - discount_matrix[: len(a), : len(a)].matmul(a)
+                + l * discount_vector[-len(r):]
+            )
+            targets.append(target)
 
+        targets = th.cat(targets)
+        return targets.std().detach().item()
+        

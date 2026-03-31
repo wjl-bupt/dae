@@ -300,7 +300,7 @@ class CustomPPO(OnPolicyAlgorithm):
         # return advantages / (advantages.std() + eps)
         return (advantages - advantages.mean() ) / (advantages.std() + eps)
 
-    def _value_loss(self, rewards, advantages, values, lasts):
+    def _value_loss(self, rewards, advantages, values, lasts, beta = None):
         # use dae original mse loss
         if self.use_huber_loss == False:
             loss = th.cat(
@@ -334,7 +334,8 @@ class CustomPPO(OnPolicyAlgorithm):
 
             preds = th.cat(preds)
             targets = th.cat(targets)
-            beta = targets.std().detach().item()
+            if beta == None:
+                beta = targets.std().detach().item()
             loss = th.nn.functional.smooth_l1_loss(preds, targets, beta=beta)
 
             return loss, beta
@@ -447,7 +448,6 @@ class CustomPPO(OnPolicyAlgorithm):
         deltas = rewards + gamma * next_values - values
 
         return deltas
-
 
     def _train_shared(self) -> None:
 
@@ -762,6 +762,16 @@ class CustomPPO(OnPolicyAlgorithm):
 
         # train for n_epochs epochs
         old_log_std = self.policy.log_std.detach()
+        # update old advantage to compute adaptive scale huber loss for value loss
+        self.rollout_buffer.update_advantage(
+            self.policy, 
+            log_std = old_log_std, 
+            batch_size =self.batch_size, 
+            gamma = self.gamma, 
+            gae_like_lambda = self.gae_like_lambda,
+            use_gae_like = False,
+        )
+        huber_loss_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_vector)
         
         self.policy.zero_grad(set_to_none=True)
         self.policy.optimizer.zero_grad(set_to_none=True)
@@ -794,6 +804,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     pred_values.split(lengths), 
                     # values,
                     last_values,
+                    beta = huber_loss_beta,
                 )
                 td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = 0.99)
                 td_loss = 0.5 * (advantages - td_error).square().mean()
@@ -900,13 +911,15 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("train/explained_variance", explain_var.detach().cpu().mean().item())
 
         # self.logger.record("tanh_sigma")
-
+        
+        # update advantage for policy update.
         self.rollout_buffer.update_advantage(
             self.policy, 
             log_std = old_log_std, 
-            batch_size =self.batch_size, 
+            batch_size = self.batch_size, 
             gamma = self.gamma, 
-            gae_like_lambda = self.gae_like_lambda
+            gae_like_lambda = self.gae_like_lambda,
+            use_gae_like = True,
         )
         
         # if self.advantage_normalization:
