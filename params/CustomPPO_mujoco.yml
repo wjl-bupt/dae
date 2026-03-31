@@ -7,18 +7,18 @@ clip_range:
     ftype: "linear"
 ent_coef: 0.0
 full_action: false
-gae_like_lambda: 0.95
+gae_like_lambda: 0.0
 use_sub_action_ratio: false
-use_huber_loss: true
+use_huber_loss: false
 dae_discouple_correction: false
 kl_coef: 0.0
 vf_coef: 0.5
-corr_coef: 0.05
+corr_coef: 0.0
 learning_rate:
     init: 0.00015
     final: 0
     ftype: "linear"
-learning_rate_vf: 0.00010
+learning_rate_vf: 0.00015
 n_epochs: 10
 n_epochs_vf: 10
 n_steps: 128

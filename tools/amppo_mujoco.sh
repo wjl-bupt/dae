@@ -20,7 +20,7 @@ PROJECT="lambda_dae2"
 
 # Mujoco 环境列表
 ENVS=(
-    "InvertedDoublePendulum-v5"
+    
     "HalfCheetah-v5"
     "Ant-v5"
     # "HumanoidStandup-v5"
@@ -28,6 +28,7 @@ ENVS=(
     "Walker2d-v5"
     "Hopper-v5"
     "InvertedPendulum-v5"
+    "InvertedDoublePendulum-v5"
     "Reacher-v5"
     "Pusher-v5"
     "Humanoid-v5"
