@@ -269,7 +269,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             return self.advantage_head(inp)
 
         # # with th.no_grad():
-        J = vmap(jacrev(f_single))(actions, latent_vf.detach())  # [B,K,K]
+        J = vmap(jacrev(f_single))(actions, latent_vf)  # [B,K,K]
         # divs = J.squeeze(1)
         divs = J.diagonal(dim1=1,dim2=2)
         

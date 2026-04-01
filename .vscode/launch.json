@@ -26,7 +26,7 @@
             "args": [
                 "--algo", "CustomPPO", 
                 "--hparam_file", "${workspaceFolder}/params/CustomPPO_mujoco_debugger.yml", 
-                "--envs", "Humanoid-v5", 
+                "--envs", "InvertedDoublePendulum-v5", 
                 "--threads", "4",
                 "--continous",
                 // "--use_wandb",

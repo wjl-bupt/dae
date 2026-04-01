@@ -12,8 +12,8 @@ use_sub_action_ratio: false
 use_huber_loss: true
 dae_discouple_correction: false
 kl_coef: 0.0
-vf_coef: 0.5
-corr_coef: 0.1
+vf_coef: 1.0
+corr_coef: 1.0
 learning_rate:
     init: 0.00015
     final: 0
