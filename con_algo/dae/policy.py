@@ -133,8 +133,10 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         self.advantage_head = nn.Sequential(
             nn.Linear(hidden_dim + self.action_space.shape[0] , hidden_dim * 2),
             self.advantage_activate_func,
-            # nn.Linear(hidden_dim * 2, self.action_space.shape[0]),
-            nn.Linear(hidden_dim * 2, 1)
+            nn.Linear(hidden_dim * 2, hidden_dim * 2),
+            self.advantage_activate_func,
+            nn.Linear(hidden_dim * 2, self.action_space.shape[0]),
+            # nn.Linear(hidden_dim * 2, 1)
         )
 
         # Init weights: use orthogonal initialization
@@ -263,7 +265,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         with th.no_grad():
             sigma = th.exp(log_std)
             scores =  - (actions - mu) / (sigma + 1e-12)
-            scores = scores.mean(dim = 1, keepdim = True)
+            # scores = scores.mean(dim = 1, keepdim = True)
 
         def f_single(x, w):
             inp = th.cat([w, x], dim=-1)
