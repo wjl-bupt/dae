@@ -392,7 +392,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 psi_pos_2 = clipped_ratio * adv
                 psi[pos_mask] = th.min(psi_pos_1, psi_pos_2)[pos_mask]
                 # ====== A <= 0 ======
-                psi_neg = ratio * adv - ((adv.abs() / (2 * max(clip_range, 1e-3))) * (ratio - 1).pow(2))
+                psi_neg = ratio * adv - ((adv.abs() / (2 * 0.1)) * (ratio - 1).pow(2)) 
                 psi[neg_mask] = psi_neg[neg_mask]
                 loss = -psi.mean()
             
