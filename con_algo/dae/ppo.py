@@ -106,7 +106,7 @@ class CustomPPO(OnPolicyAlgorithm):
         use_sub_action_ratio: bool = True,
         corr_coef: float = 0.2,
         use_huber_loss: bool = True,
-        
+        dual_clip_coef: float = 3.0,
     ):  
         super(CustomPPO, self).__init__(
             policy,
@@ -148,6 +148,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self.learning_rate_vf = learning_rate_vf
         self.corr_coef = corr_coef
         self.use_huber_loss = use_huber_loss
+        self.dual_clip_coef = dual_clip_coef
 
         if not shared:
             warnings.warn(
@@ -402,8 +403,8 @@ class CustomPPO(OnPolicyAlgorithm):
                 surr1 = ratio * adv
                 surr2 = th.clamp(ratio, 1 - clip_range, 1 + clip_range) * adv
                 clip1 = th.min(surr1, surr2)
-                dual_clip_coef = 3
-                dual_clip =  dual_clip_coef * adv   # c * A（注意 A < 0）
+                
+                dual_clip =  self.dual_clip_coef * adv   # c * A（注意 A < 0）
                 loss = th.where(
                     adv >= 0,
                     clip1,
