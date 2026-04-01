@@ -381,20 +381,37 @@ class CustomPPO(OnPolicyAlgorithm):
                 # loss = - (policy_loss_1 - policy_loss_2).mean()
                 
                 # fpo++ type
-                pos_mask = adv > 0
-                neg_mask = adv <= 0
+                # pos_mask = adv > 0
+                # neg_mask = adv <= 0
+                # log_ratio = logp - old_logp
+                # ratio = log_ratio.sum(1).exp()
+                # clipped_ratio = th.clamp(ratio, 1 - clip_range, 1 + clip_range)
+                # psi = th.zeros_like(adv)
+                # # ====== A > 0 ======
+                # psi_pos_1 = ratio * adv
+                # psi_pos_2 = clipped_ratio * adv
+                # psi[pos_mask] = th.min(psi_pos_1, psi_pos_2)[pos_mask]
+                # # ====== A <= 0 ======
+                # psi_neg = ratio * adv - ((adv.abs() / (2 * 0.1)) * (ratio - 1).pow(2)) 
+                # psi[neg_mask] = psi_neg[neg_mask]
+                # loss = -psi.mean()
+                
+                # dual clip in ppo
                 log_ratio = logp - old_logp
                 ratio = log_ratio.sum(1).exp()
-                clipped_ratio = th.clamp(ratio, 1 - clip_range, 1 + clip_range)
-                psi = th.zeros_like(adv)
-                # ====== A > 0 ======
-                psi_pos_1 = ratio * adv
-                psi_pos_2 = clipped_ratio * adv
-                psi[pos_mask] = th.min(psi_pos_1, psi_pos_2)[pos_mask]
-                # ====== A <= 0 ======
-                psi_neg = ratio * adv - ((adv.abs() / (2 * 0.1)) * (ratio - 1).pow(2)) 
-                psi[neg_mask] = psi_neg[neg_mask]
-                loss = -psi.mean()
+                surr1 = ratio * adv
+                surr2 = th.clamp(ratio, 1 - clip_range, 1 + clip_range) * adv
+                clip1 = th.min(surr1, surr2)
+                dual_clip_coef = 3
+                dual_clip =  dual_clip_coef * adv   # c * A（注意 A < 0）
+                loss = th.where(
+                    adv >= 0,
+                    clip1,
+                    th.max(clip1, dual_clip)
+                )
+
+                loss = -loss.mean()
+                
             
         return loss, ratio
 
