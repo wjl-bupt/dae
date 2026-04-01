@@ -354,7 +354,7 @@ class CustomPPO(OnPolicyAlgorithm):
             if self.use_sub_action_ratio:
                 ratio = th.exp(logp - old_logp)
                 #  / self.action_space.shape[0]
-                adv = adv.unsqueeze(-1)
+                adv = adv.unsqueeze(-1) / self.action_space.shape[0]
                 policy_loss_1 = adv * ratio
                 policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
                 loss = -th.min(policy_loss_1, policy_loss_2).mean()
@@ -367,11 +367,11 @@ class CustomPPO(OnPolicyAlgorithm):
                 #         th.log(th.tensor(1 - clip_range)).item(), th.log(th.tensor(1 + clip_range)).item()
                 #     ).sum(dim = 1)
                 
-                log_ratio = logp - old_logp
-                ratio = log_ratio.sum(1).exp()
-                policy_loss_1 = adv * ratio
-                policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
-                loss = -th.min(policy_loss_1, policy_loss_2).mean()
+                # log_ratio = logp - old_logp
+                # ratio = log_ratio.sum(1).exp()
+                # policy_loss_1 = adv * ratio
+                # policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
+                # loss = -th.min(policy_loss_1, policy_loss_2).mean()
                 
                 # use simple policy optimization loss form. paper is 
                 # log_ratio = logp - old_logp
@@ -379,6 +379,22 @@ class CustomPPO(OnPolicyAlgorithm):
                 # policy_loss_1 = adv * ratio
                 # policy_loss_2 = (adv.abs() * (ratio - 1).pow(2)) / (2 * max(clip_range, 1e-3))
                 # loss = - (policy_loss_1 - policy_loss_2).mean()
+                
+                # fpo++ type
+                pos_mask = adv > 0
+                neg_mask = adv <= 0
+                log_ratio = logp - old_logp
+                ratio = log_ratio.sum(1).exp()
+                clipped_ratio = th.clamp(ratio, 1 - clip_range, 1 + clip_range)
+                psi = th.zeros_like(adv)
+                # ====== A > 0 ======
+                psi_pos_1 = ratio * adv
+                psi_pos_2 = clipped_ratio * adv
+                psi[pos_mask] = th.min(psi_pos_1, psi_pos_2)[pos_mask]
+                # ====== A <= 0 ======
+                psi_neg = ratio * adv - ((adv.abs() / (2 * max(clip_range, 1e-3))) * (ratio - 1).pow(2))
+                psi[neg_mask] = psi_neg[neg_mask]
+                loss = -psi.mean()
             
         return loss, ratio
 
@@ -801,8 +817,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
                 main_value_loss, beta = self._value_loss(
                     rewards.split(lengths), 
-                    target_advantages.split(lengths),
-                    # advantages.split(lengths), 
+                    advantages.split(lengths), 
                     pred_values.split(lengths), 
                     # values,
                     last_values,
@@ -818,7 +833,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                 #  + 0.1 * (1 - corr) 
                 # + cur_corr_coef * (1 - corr)
-                value_loss = self.vf_coef * main_value_loss + cur_corr_coef * td_loss
+                value_loss = self.vf_coef * main_value_loss + cur_corr_coef * (1 - corr) 
                 # value_loss = self.vf_coef * value_loss + 0.1 * (1.0 / (advantages.std() + 1.0)).mean() 
                 # value_loss += (ex_adv**2).mean()
                 # value_loss = value_loss + 0.2 * (ex_adv**2).mean()
