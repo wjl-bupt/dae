@@ -133,10 +133,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         self.advantage_head = nn.Sequential(
             nn.Linear(hidden_dim + self.action_space.shape[0] , hidden_dim * 2),
             self.advantage_activate_func,
-            nn.Linear(hidden_dim * 2, hidden_dim * 2),
-            self.advantage_activate_func,
             nn.Linear(hidden_dim * 2, self.action_space.shape[0]),
-            # nn.Linear(hidden_dim * 2, 1)
         )
 
         # Init weights: use orthogonal initialization
@@ -272,7 +269,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             return self.advantage_head(inp)
 
         # # with th.no_grad():
-        J = vmap(jacrev(f_single))(actions, latent_vf)  # [B,K,K]
+        J = vmap(jacrev(f_single))(actions, latent_vf.detach())  # [B,K,K]
         # divs = J.squeeze(1)
         divs = J.diagonal(dim1=1,dim2=2)
         
