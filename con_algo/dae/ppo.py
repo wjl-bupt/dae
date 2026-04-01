@@ -785,6 +785,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 last_values = data.last_values
                 lengths = data.lengths
                 target_values = data.values
+                target_advantages = data.advantages
 
                 (
                     values, 
@@ -800,7 +801,8 @@ class CustomPPO(OnPolicyAlgorithm):
                 pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
                 main_value_loss, beta = self._value_loss(
                     rewards.split(lengths), 
-                    advantages.split(lengths), 
+                    target_advantages.split(lengths),
+                    # advantages.split(lengths), 
                     pred_values.split(lengths), 
                     # values,
                     last_values,
@@ -908,13 +910,15 @@ class CustomPPO(OnPolicyAlgorithm):
         returns = gae_advantages + target_values
         preds = th.cat(preds)
 
-        var_y = th.var(returns - preds)
+        var_y = th.var(returns).item()
         if var_y < 1e-8:
             var_y =  th.tensor(0.0)
-        explain_var =  1 - var_y / (var_y + 1e-12)  
-        self.logger.record("train/explained_variance", explain_var.detach().cpu().mean().item())
+        explain_var =  np.nan if var_y == 0 else float(1 - th.var(returns - preds).item() / var_y)  
+        self.logger.record("train/explained_variance", explain_var)
 
-        # self.logger.record("tanh_sigma")
+        dae_advantages = self._compute_gae_like_advantages_(target_advantages, lengths)
+        gae_dae_corr = ((dae_advantages - dae_advantages.mean()) * (gae_advantages - gae_advantages.mean())).mean() / (dae_advantages.std() * gae_advantages.std() + 1e-10)
+        self.logger.record("train/gae_dae_corr", gae_dae_corr.detach().cpu().mean().item())
         
         # update advantage for policy update.
         self.rollout_buffer.update_advantage(
