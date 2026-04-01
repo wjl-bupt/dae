@@ -325,7 +325,7 @@ class CustomPPO(OnPolicyAlgorithm):
             for r, a, v, l in zip(rewards, advantages, values, lasts):
                 target = (
                     self.discount_matrix[: len(r), : len(r)].matmul(r)
-                    - self.gae_like_lambdadiscount_matrix[: len(a), : len(a)].matmul(a)
+                    - self.discount_matrix[: len(a), : len(a)].matmul(a)
                     + l * self.discount_vector[-len(r):]
                 )
 
@@ -807,7 +807,10 @@ class CustomPPO(OnPolicyAlgorithm):
                     beta = huber_loss_beta,
                 )
                 td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = 0.99)
-                td_loss = 0.5 * (advantages - td_error).square().mean()
+                # NOTE(junweiluo): 修改TD Loss的形式
+                advantages_normalization = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+                td_error_normalization = (td_error - td_error.mean()) / (td_error.std() + 1e-8)
+                td_loss = 0.5 * (advantages_normalization - td_error_normalization).square().mean()
                 corr = ((advantages - advantages.mean()) * (td_error - td_error.mean())).mean() \
                     / (td_error.std(unbiased = False) * advantages.std(unbiased = False) + 1e-10)
                 td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
