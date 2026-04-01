@@ -325,7 +325,7 @@ class CustomPPO(OnPolicyAlgorithm):
             for r, a, v, l in zip(rewards, advantages, values, lasts):
                 target = (
                     self.discount_matrix[: len(r), : len(r)].matmul(r)
-                    - self.discount_matrix[: len(a), : len(a)].matmul(a)
+                    - self.gae_like_lambdadiscount_matrix[: len(a), : len(a)].matmul(a)
                     + l * self.discount_vector[-len(r):]
                 )
 
@@ -890,24 +890,25 @@ class CustomPPO(OnPolicyAlgorithm):
         # 计算一下value network的评估是否准确
         targets = []
         preds = []
-        deltas = (rewards - advantages).split(lengths)
-        for d, v, l in zip(deltas, values, last_values):
-
+        # deltas = (rewards - advantages).split(lengths)
+        
+        for d, v, l in zip(td_error.split(lengths), values, last_values):
             target = (
-                self.discount_matrix[: len(d), : len(d)].matmul(d)
-                + l * self.discount_vector[-len(d):]
+                self.gae_like_lambdadiscount_matrix[: len(d), : len(d)].matmul(d)
+                # + l * self.discount_vector[-len(d):]
             )
 
             targets.append(target)
             preds.append(v)
 
-        targets = th.cat(targets)
+        gae_advantages = th.cat(targets)
+        returns = gae_advantages + target_values
         preds = th.cat(preds)
 
-        var_y = th.var(targets)
+        var_y = th.var(returns - preds)
         if var_y < 1e-8:
             var_y =  th.tensor(0.0)
-        explain_var =  1 - th.var(targets - preds) / (var_y + 1e-12)  
+        explain_var =  1 - var_y / (var_y + 1e-12)  
         self.logger.record("train/explained_variance", explain_var.detach().cpu().mean().item())
 
         # self.logger.record("tanh_sigma")
