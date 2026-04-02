@@ -10,6 +10,6 @@ learning_rate:
     init: 0.00025
     final: 0
     ftype: "linear"
-n_epochs: 10
-n_steps: 128
+n_epochs: 8
+n_steps: 128 
 nenvs: 32

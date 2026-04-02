@@ -149,6 +149,8 @@ class CustomPPO(OnPolicyAlgorithm):
         self.corr_coef = corr_coef
         self.use_huber_loss = use_huber_loss
         self.dual_clip_coef = dual_clip_coef
+        # corr coef decay threshold, when progress remaining is smaller than this value, we start to decay the corr coef
+        self.corr_coef_decay_threshold = 0.8
 
         if not shared:
             warnings.warn(
@@ -784,6 +786,9 @@ class CustomPPO(OnPolicyAlgorithm):
         self._update_learning_rate(
             self.policy.optimizer_vf, self.lr_schedule_vf, suffix="_vf"
         )
+    
+        
+        cur_corr_coef = self.corr_coef * (max(0, self._current_progress_remaining - self.corr_coef_decay_threshold) / (1 - self.corr_coef_decay_threshold))
 
         # Compute current clip range
         clip_range = self.clip_range(self._current_progress_remaining)
