@@ -16,13 +16,12 @@ echo "Using config snapshot: $SNAPSHOT_CFG"
 THREADS=1
 LOGGING="--logging"
 USE_WANDB="--use_wandb"
-PROJECT="lambda_dae"
+PROJECT="lambda_dae3"
 
 # Mujoco 环境列表
 ENVS=(
     "Ant-v5"
     "HalfCheetah-v5"
-    
     # "HumanoidStandup-v5"
     "Swimmer-v5"
     "Walker2d-v5"

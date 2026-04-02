@@ -20,8 +20,8 @@ learning_rate:
     final: 0
     ftype: "linear"
 learning_rate_vf: 0.00025
-n_epochs: 10
-n_epochs_vf: 10
+n_epochs: 8
+n_epochs_vf: 8
 n_steps: 256
 shared: false
 nenvs: 128
