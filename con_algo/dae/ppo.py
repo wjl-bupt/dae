@@ -412,7 +412,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     th.max(clip1, dual_clip)
                 )
 
-                # loss = -loss.mean()
+                loss = -loss.mean()
                 
             
         return loss, ratio
