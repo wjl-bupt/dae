@@ -788,8 +788,8 @@ class CustomPPO(OnPolicyAlgorithm):
         )
     
         
-        cur_corr_coef = self.corr_coef * (max(0, self._current_progress_remaining - self.corr_coef_decay_threshold) / (1 - self.corr_coef_decay_threshold))
-
+        # cur_corr_coef = self.corr_coef * (max(0, self._current_progress_remaining - self.corr_coef_decay_threshold) / (1 - self.corr_coef_decay_threshold))
+        cur_corr_coef = self.corr_coef
         # Compute current clip range
         clip_range = self.clip_range(self._current_progress_remaining)
 
