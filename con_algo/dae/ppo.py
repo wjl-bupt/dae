@@ -403,7 +403,6 @@ class CustomPPO(OnPolicyAlgorithm):
                 surr1 = ratio * adv
                 surr2 = th.clamp(ratio, 1 - clip_range, 1 + clip_range) * adv
                 clip1 = th.min(surr1, surr2)
-                
                 dual_clip =  self.dual_clip_coef * adv   # c * A（注意 A < 0）
                 loss = th.where(
                     adv >= 0,
