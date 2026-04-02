@@ -20,8 +20,9 @@ PROJECT="lambda_dae"
 
 # Mujoco 环境列表
 ENVS=(
-    "HalfCheetah-v5"
     "Ant-v5"
+    "HalfCheetah-v5"
+    
     # "HumanoidStandup-v5"
     "Swimmer-v5"
     "Walker2d-v5"
