@@ -9,7 +9,7 @@ ent_coef: 0.0
 full_action: false
 gae_like_lambda: 0.95
 use_sub_action_ratio: false
-use_huber_loss: true
+use_huber_loss: false
 dae_discouple_correction: false
 dual_clip_coef: 2.0
 kl_coef: 0.0
@@ -20,8 +20,8 @@ learning_rate:
     final: 0
     ftype: "linear"
 learning_rate_vf: 0.00015
-n_epochs: 10
-n_epochs_vf: 10
+n_epochs: 6
+n_epochs_vf: 6
 n_steps: 128
 shared: false
 nenvs: 128

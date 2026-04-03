@@ -298,7 +298,7 @@ class CustomPPO(OnPolicyAlgorithm):
             update_learning_rate(optimizer, new_lr)
         self.logger.record(f"train/learning_rate{suffix}", new_lr)
 
-    def _normalize_advantage(self, advantages, policies = None, eps=1e-8):
+    def _normalize_advantage(self, advantages, policies = None, eps=1e-10):
 
         # return advantages / (advantages.std() + eps)
         return (advantages - advantages.mean() ) / (advantages.std() + eps)
@@ -370,11 +370,11 @@ class CustomPPO(OnPolicyAlgorithm):
                 #         th.log(th.tensor(1 - clip_range)).item(), th.log(th.tensor(1 + clip_range)).item()
                 #     ).sum(dim = 1)
                 
-                # log_ratio = logp - old_logp
-                # ratio = log_ratio.sum(1).exp()
-                # policy_loss_1 = adv * ratio
-                # policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
-                # loss = -th.min(policy_loss_1, policy_loss_2).mean()
+                log_ratio = logp - old_logp
+                ratio = log_ratio.sum(1).exp()
+                policy_loss_1 = adv * ratio
+                policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
+                loss = -th.min(policy_loss_1, policy_loss_2).mean()
                 
                 # use simple policy optimization loss form. paper is 
                 # log_ratio = logp - old_logp
@@ -400,19 +400,19 @@ class CustomPPO(OnPolicyAlgorithm):
                 # loss = -psi.mean()
                 
                 # dual clip in ppo
-                log_ratio = logp - old_logp
-                ratio = log_ratio.sum(1).exp()
-                surr1 = ratio * adv
-                surr2 = th.clamp(ratio, 1 - clip_range, 1 + clip_range) * adv
-                clip1 = th.min(surr1, surr2)
-                dual_clip =  self.dual_clip_coef * adv   # c * A（注意 A < 0）
-                loss = th.where(
-                    adv >= 0,
-                    clip1,
-                    th.max(clip1, dual_clip)
-                )
+                # log_ratio = logp - old_logp
+                # ratio = log_ratio.sum(1).exp()
+                # surr1 = ratio * adv
+                # surr2 = th.clamp(ratio, 1 - clip_range, 1 + clip_range) * adv
+                # clip1 = th.min(surr1, surr2)
+                # dual_clip =  self.dual_clip_coef * adv   # c * A（注意 A < 0）
+                # loss = th.where(
+                #     adv >= 0,
+                #     clip1,
+                #     th.max(clip1, dual_clip)
+                # )
 
-                loss = -loss.mean()
+                # loss = -loss.mean()
                 
             
         return loss, ratio
@@ -441,12 +441,8 @@ class CustomPPO(OnPolicyAlgorithm):
         # reverse
         adv = th.flip(raw_advantages, dims=[0])
         done = th.flip(dones, dims=[0])
-
         out = th.zeros_like(adv)
-
         acc = th.zeros(1, device=device)
-
-        # ⚠️ 这里仍然是 loop，但在 GPU 上很快
         for t in range(B):
             acc = adv[t] + coef * (1 - done[t]) * acc
             out[t] = acc   
@@ -801,14 +797,14 @@ class CustomPPO(OnPolicyAlgorithm):
         # train for n_epochs epochs
         old_log_std = self.policy.log_std.detach()
         # update old advantage to compute adaptive scale huber loss for value loss
-        self.rollout_buffer.update_advantage(
-            self.policy, 
-            log_std = old_log_std, 
-            batch_size =self.batch_size, 
-            gamma = self.gamma, 
-            gae_like_lambda = self.gae_like_lambda,
-            use_gae_like = False,
-        )
+        # self.rollout_buffer.update_advantage(
+        #     self.policy, 
+        #     log_std = old_log_std, 
+        #     batch_size =self.batch_size, 
+        #     gamma = self.gamma, 
+        #     gae_like_lambda = self.gae_like_lambda,
+        #     use_gae_like = False,
+        # )
         huber_loss_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_vector)
         
         self.policy.zero_grad(set_to_none=True)
@@ -840,8 +836,8 @@ class CustomPPO(OnPolicyAlgorithm):
                 main_value_loss, beta = self._value_loss(
                     rewards.split(lengths), 
                     advantages.split(lengths), 
-                    # pred_values.split(lengths), 
-                    values,
+                    pred_values.split(lengths), 
+                    # values,
                     last_values,
                     beta = huber_loss_beta,
                 )
@@ -952,10 +948,16 @@ class CustomPPO(OnPolicyAlgorithm):
             var_y =  th.tensor(0.0)
         explain_var =  np.nan if var_y == 0 else float(1 - th.var(returns - preds).item() / var_y)  
         self.logger.record("train/explained_variance", explain_var)
+        # 记录一下value是否被低估
+        diff = (returns - preds).detach().cpu()
+        self.logger.record("values/value_diff_media", diff.median().item())
+        self.logger.record("values/value_diff_p50", diff.quantile(50).item())
+        self.logger.record("values/value_diff_p90", diff.quantile(90).item())
+        
 
-        dae_advantages = self._compute_gae_like_advantages_(target_advantages, lengths)
-        gae_dae_corr = ((dae_advantages - dae_advantages.mean()) * (gae_advantages - gae_advantages.mean())).mean() / (dae_advantages.std() * gae_advantages.std() + 1e-10)
-        self.logger.record("train/gae_dae_corr", gae_dae_corr.detach().cpu().mean().item())
+        # dae_advantages = self._compute_gae_like_advantages_(target_advantages, lengths)
+        # gae_dae_corr = ((dae_advantages - dae_advantages.mean()) * (gae_advantages - gae_advantages.mean())).mean() / (dae_advantages.std() * gae_advantages.std() + 1e-10)
+        # self.logger.record("train/gae_dae_corr", gae_dae_corr.detach().cpu().mean().item())
         
         # update advantage for policy update.
         self.rollout_buffer.update_advantage(
