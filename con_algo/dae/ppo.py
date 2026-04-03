@@ -8,6 +8,7 @@
 '''
 
 # 
+import math
 from typing import Any, Dict, Optional, Type, Union
 from functools import partial
 
@@ -773,6 +774,19 @@ class CustomPPO(OnPolicyAlgorithm):
         explain_var =  1 - th.var(targets - preds) / var_y  
         self.logger.record("train/explained_variance", explain_var.cpu().mean().item())
 
+
+    def lambda_schedule(self, p, max_lambda, lambda_, k=10, c=0.3):
+        x = 1 - p
+
+        def sigmoid(x):
+            return 1 / (1 + math.exp(-k * (x - c)))
+
+        s0 = sigmoid(0)
+        s1 = sigmoid(1)
+        s = (sigmoid(x) - s0) / (s1 - s0)
+
+        return lambda_ + max(0, (max_lambda - lambda_) * s)
+
     def _train_separate(self) -> None:
         cur_corr_coef = self.corr_coef
         # Update optimizer learning rate
@@ -960,12 +974,18 @@ class CustomPPO(OnPolicyAlgorithm):
         # self.logger.record("train/gae_dae_corr", gae_dae_corr.detach().cpu().mean().item())
         
         # update advantage for policy update.
+        # gae-like lambda linear anneal from self.gae_like_lambda to max_gae_like_lambda
+        # 
+        max_gae_like_lambda = 0.95
+        current_gae_like_lambda = self.lambda_schedule(self._current_progress_remaining, max_gae_like_lambda, self.gae_like_lambda)
+        
+        
         self.rollout_buffer.update_advantage(
             self.policy, 
             log_std = old_log_std, 
             batch_size = self.batch_size, 
             gamma = self.gamma, 
-            gae_like_lambda = self.gae_like_lambda,
+            gae_like_lambda = current_gae_like_lambda,
             use_gae_like = True,
         )
         
@@ -1072,6 +1092,7 @@ class CustomPPO(OnPolicyAlgorithm):
         # self.logger.record("train/tanh_std", (1 - tanh_mu.pow(2)) / (1 + (2 / th.sqrt(1 + (th.pi * sigma.pow(2) / 4)))))
         self.logger.record("train/std", old_log_std.cpu().exp().mean().item())
         self.logger.record("train/ratio", ratio.cpu().mean().item()) 
+        self.logger.record("train/gae_like_lambda", current_gae_like_lambda)
         # self.logger.record("losses/lr_vf_", self.policy.optimizer_vf.param_groups[0]["lr"])
 
         self.logger.record("log_policies/policy_min", log_policies.sum(-1).detach().cpu().min().item())
