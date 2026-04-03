@@ -951,8 +951,8 @@ class CustomPPO(OnPolicyAlgorithm):
         # 记录一下value是否被低估
         diff = (returns - preds).detach().cpu()
         self.logger.record("values/value_diff_media", diff.median().item())
-        self.logger.record("values/value_diff_p50", diff.quantile(50).item())
-        self.logger.record("values/value_diff_p90", diff.quantile(90).item())
+        self.logger.record("values/value_diff_p50", diff.quantile(0.5).item())
+        self.logger.record("values/value_diff_p90", diff.quantile(0.9).item())
         
 
         # dae_advantages = self._compute_gae_like_advantages_(target_advantages, lengths)
