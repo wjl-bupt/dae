@@ -377,11 +377,11 @@ class CustomPPO(OnPolicyAlgorithm):
                 # loss = -th.min(policy_loss_1, policy_loss_2).mean()
                 
                 # use simple policy optimization loss form. paper is 
-                # log_ratio = logp - old_logp
-                # ratio = log_ratio.sum(1).exp()
-                # policy_loss_1 = adv * ratio
-                # policy_loss_2 = (adv.abs() * (ratio - 1).pow(2)) / (2 * max(clip_range, 1e-3))
-                # loss = - (policy_loss_1 - policy_loss_2).mean()
+                log_ratio = logp - old_logp
+                ratio = log_ratio.sum(1).exp()
+                policy_loss_1 = adv * ratio
+                policy_loss_2 = (adv.abs() * (ratio - 1).pow(2)) / (2 * max(clip_range, 1e-3))
+                loss = - (policy_loss_1 - policy_loss_2).mean()
                 
                 # fpo++ type
                 # pos_mask = adv > 0
@@ -400,19 +400,19 @@ class CustomPPO(OnPolicyAlgorithm):
                 # loss = -psi.mean()
                 
                 # dual clip in ppo
-                log_ratio = logp - old_logp
-                ratio = log_ratio.sum(1).exp()
-                surr1 = ratio * adv
-                surr2 = th.clamp(ratio, 1 - clip_range, 1 + clip_range) * adv
-                clip1 = th.min(surr1, surr2)
-                dual_clip =  self.dual_clip_coef * adv   # c * A（注意 A < 0）
-                loss = th.where(
-                    adv >= 0,
-                    clip1,
-                    th.max(clip1, dual_clip)
-                )
+                # log_ratio = logp - old_logp
+                # ratio = log_ratio.sum(1).exp()
+                # surr1 = ratio * adv
+                # surr2 = th.clamp(ratio, 1 - clip_range, 1 + clip_range) * adv
+                # clip1 = th.min(surr1, surr2)
+                # dual_clip =  self.dual_clip_coef * adv   # c * A（注意 A < 0）
+                # loss = th.where(
+                #     adv >= 0,
+                #     clip1,
+                #     th.max(clip1, dual_clip)
+                # )
 
-                loss = -loss.mean()
+                # loss = -loss.mean()
                 
             
         return loss, ratio
