@@ -1092,7 +1092,7 @@ class CustomPPO(OnPolicyAlgorithm):
         # self.logger.record("train/tanh_std", (1 - tanh_mu.pow(2)) / (1 + (2 / th.sqrt(1 + (th.pi * sigma.pow(2) / 4)))))
         self.logger.record("train/std", old_log_std.cpu().exp().mean().item())
         self.logger.record("train/ratio", ratio.cpu().mean().item()) 
-        self.logger.record("train/gae_like_lambda", current_gae_like_lambda)
+        # self.logger.record("train/gae_like_lambda", current_gae_like_lambda)
         # self.logger.record("losses/lr_vf_", self.policy.optimizer_vf.param_groups[0]["lr"])
 
         self.logger.record("log_policies/policy_min", log_policies.sum(-1).detach().cpu().min().item())
