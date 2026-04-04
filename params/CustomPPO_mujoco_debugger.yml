@@ -24,5 +24,5 @@ n_epochs: 10
 n_epochs_vf: 10
 n_steps: 128
 shared: false
-nenvs: 128
+nenvs: 4
 nheads: 1

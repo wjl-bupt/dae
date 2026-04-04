@@ -1,6 +1,6 @@
 advantage_normalization: true
-batch_size: 512
-batch_size_vf: 512
+batch_size: 256
+batch_size_vf: 256
 clip_range:
     init: 0.1
     final: 0.0

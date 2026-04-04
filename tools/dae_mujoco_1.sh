@@ -21,17 +21,16 @@ PROJECT="lambda_dae4"
 # Mujoco 环境列表
 ENVS=(
     "HalfCheetah-v5"
-    # "Hopper-v5"
-    # "InvertedDoublePendulum-v5"
-    # "InvertedPendulum-v5"
-    # "Reacher-v5"
+    "Hopper-v5"
+    "InvertedDoublePendulum-v5"
+    "InvertedPendulum-v5"
+    "Reacher-v5"
 
 )
 
 
 # 运行的最大 seed 数量
-MAX_SEED=1
-
+MAX_SEED=5
 # activate proxy if we use wandb
 # source /etc/profile.d/clash.sh
 # proxy_on
