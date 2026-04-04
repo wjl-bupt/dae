@@ -338,9 +338,9 @@ class CustomPPO(OnPolicyAlgorithm):
 
             preds = th.cat(preds)
             targets = th.cat(targets)
-            if th.isnan(th.tensor(beta)):
-                raise ValueError(f"beta is too large: {beta}, sample shape is {targets.shape}, sample var is {targets.var(unbiased=False).item()}")
-                # beta = targets.std().detach().item()
+            if beta is None or th.isnan(th.tensor(beta)):
+                # raise ValueError(f"beta is too large: {beta}, sample shape is {targets.shape}, sample var is {targets.var(unbiased=False).item()}")
+                beta = targets.std().detach().item()
             loss = th.nn.functional.smooth_l1_loss(preds, targets, beta=beta)
 
             return loss, beta
