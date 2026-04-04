@@ -338,8 +338,9 @@ class CustomPPO(OnPolicyAlgorithm):
 
             preds = th.cat(preds)
             targets = th.cat(targets)
-            if beta == None:
-                beta = targets.std().detach().item()
+            if th.isnan(th.tensor(beta)):
+                raise ValueError(f"beta is too large: {beta}, sample shape is {targets.shape}, sample var is {targets.var(unbiased=False).item()}")
+                # beta = targets.std().detach().item()
             loss = th.nn.functional.smooth_l1_loss(preds, targets, beta=beta)
 
             return loss, beta
@@ -811,14 +812,14 @@ class CustomPPO(OnPolicyAlgorithm):
         # train for n_epochs epochs
         old_log_std = self.policy.log_std.detach()
         # update old advantage to compute adaptive scale huber loss for value loss
-        # self.rollout_buffer.update_advantage(
-        #     self.policy, 
-        #     log_std = old_log_std, 
-        #     batch_size =self.batch_size, 
-        #     gamma = self.gamma, 
-        #     gae_like_lambda = self.gae_like_lambda,
-        #     use_gae_like = False,
-        # )
+        self.rollout_buffer.update_advantage(
+            self.policy, 
+            log_std = old_log_std, 
+            batch_size =self.batch_size, 
+            gamma = self.gamma, 
+            gae_like_lambda = self.gae_like_lambda,
+            use_gae_like = False,
+        )
         huber_loss_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_vector)
         
         self.policy.zero_grad(set_to_none=True)
@@ -847,6 +848,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 # value loss
                 values = values.flatten().split(lengths)
                 pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
+                # print(huber_loss_beta)
                 main_value_loss, beta = self._value_loss(
                     rewards.split(lengths), 
                     advantages.split(lengths), 
