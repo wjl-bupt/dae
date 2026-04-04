@@ -976,8 +976,8 @@ class CustomPPO(OnPolicyAlgorithm):
         # update advantage for policy update.
         # gae-like lambda linear anneal from self.gae_like_lambda to max_gae_like_lambda
         # 
-        max_gae_like_lambda = 0.95
-        current_gae_like_lambda = self.lambda_schedule(self._current_progress_remaining, max_gae_like_lambda, self.gae_like_lambda)
+        # max_gae_like_lambda = 0.95
+        # current_gae_like_lambda = self.lambda_schedule(self._current_progress_remaining, max_gae_like_lambda, self.gae_like_lambda)
         
         
         self.rollout_buffer.update_advantage(
@@ -985,7 +985,7 @@ class CustomPPO(OnPolicyAlgorithm):
             log_std = old_log_std, 
             batch_size = self.batch_size, 
             gamma = self.gamma, 
-            gae_like_lambda = current_gae_like_lambda,
+            gae_like_lambda = self.gae_like_lambda,
             use_gae_like = True,
         )
         
