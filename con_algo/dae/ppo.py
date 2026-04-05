@@ -341,7 +341,7 @@ class CustomPPO(OnPolicyAlgorithm):
             if beta is None or th.isnan(th.tensor(beta)):
                 # raise ValueError(f"beta is too large: {beta}, sample shape is {targets.shape}, sample var is {targets.var(unbiased=False).item()}")
                 beta = targets.std().detach().item()
-            loss = th.nn.functional.smooth_l1_loss(preds, targets, beta=beta, reduction="none")
+            loss = th.nn.functional.smooth_l1_loss(preds, targets, beta=beta, reduction="mean")
 
             return loss, beta
 
@@ -818,7 +818,7 @@ class CustomPPO(OnPolicyAlgorithm):
             batch_size =self.batch_size, 
             gamma = self.gamma, 
             gae_like_lambda = self.gae_like_lambda,
-            use_gae_like = True,
+            use_gae_like = False,
         )
         huber_loss_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix,  self.gae_like_lambdadiscount_matrix, self.discount_vector)
         
@@ -847,30 +847,15 @@ class CustomPPO(OnPolicyAlgorithm):
                 )
                 # value loss
                 values = values.flatten().split(lengths)
-                # pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
-                # value loss
-                target_returns = target_values + target_advantages
-                value_clipped = target_values + th.clamp(
-                    th.cat(values) - target_values,
-                    - 0.2,
-                    0.2
-                )
-
-                # 3. clipped loss
-                value_loss_clipped = (value_clipped - target_returns).square()
-
-                # 4. take max (PPO style)
-                main_value_loss_1 = (value_loss_clipped - target_returns).square()
+                pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
                 # advantage loss
-                main_value_loss_2, beta = self._value_loss(
+                main_value_loss, beta = self._value_loss(
                     rewards.split(lengths), 
                     advantages.split(lengths), 
-                    # pred_values.split(lengths), 
-                    target_values.split(lengths),
+                    pred_values.split(lengths), 
                     last_values,
                     beta = huber_loss_beta,
                 )
-                main_value_loss = (main_value_loss_1 + main_value_loss_2).mean()
                 
                 
                 td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = 0.99)
@@ -972,8 +957,7 @@ class CustomPPO(OnPolicyAlgorithm):
             preds.append(v)
 
         gae_advantages = th.cat(targets)
-        # dae_advantages = self._compute_gae_like_advantages_(target_advantages, lengths)
-        dae_advantages = target_advantages
+        dae_advantages = self._compute_gae_like_advantages_(target_advantages, lengths)
         returns = dae_advantages + target_values
         preds = th.cat(preds)
 
