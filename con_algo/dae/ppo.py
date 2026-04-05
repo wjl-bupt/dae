@@ -341,7 +341,7 @@ class CustomPPO(OnPolicyAlgorithm):
             if beta is None or th.isnan(th.tensor(beta)):
                 # raise ValueError(f"beta is too large: {beta}, sample shape is {targets.shape}, sample var is {targets.var(unbiased=False).item()}")
                 beta = targets.std().detach().item()
-            loss = th.nn.functional.smooth_l1_loss(preds, targets, beta=beta)
+            loss = th.nn.functional.smooth_l1_loss(preds, targets, beta=beta, reduction="none")
 
             return loss, beta
 
@@ -818,9 +818,9 @@ class CustomPPO(OnPolicyAlgorithm):
             batch_size =self.batch_size, 
             gamma = self.gamma, 
             gae_like_lambda = self.gae_like_lambda,
-            use_gae_like = False,
+            use_gae_like = True,
         )
-        huber_loss_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix,  self.gae_like_lambdadiscount_matrix,self.discount_vector)
+        huber_loss_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix,  self.gae_like_lambdadiscount_matrix, self.discount_vector)
         
         self.policy.zero_grad(set_to_none=True)
         self.policy.optimizer.zero_grad(set_to_none=True)
@@ -847,16 +847,37 @@ class CustomPPO(OnPolicyAlgorithm):
                 )
                 # value loss
                 values = values.flatten().split(lengths)
-                pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
-                # print(huber_loss_beta)
-                main_value_loss, beta = self._value_loss(
+                # pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
+                # value loss
+                target_returns = target_values + target_advantages
+                value_loss_unclipped = (th.cat(values) - target_returns).square()
+                value_clipped = target_values + th.clamp(
+                    th.cat(values) - target_values,
+                    - 0.2,
+                    0.2
+                )
+
+                # 3. clipped loss
+                value_loss_clipped = (value_clipped - target_returns).square()
+
+                # 4. take max (PPO style)
+                main_value_loss_1 = th.max(
+                    value_loss_unclipped,
+                    value_loss_clipped
+                )      
+                
+                # advantage loss
+                main_value_loss_2, beta = self._value_loss(
                     rewards.split(lengths), 
                     advantages.split(lengths), 
-                    pred_values.split(lengths), 
-                    # values,
+                    # pred_values.split(lengths), 
+                    target_values.split(lengths),
                     last_values,
                     beta = huber_loss_beta,
                 )
+                main_value_loss = (main_value_loss_1 + main_value_loss_2).mean()
+                
+                
                 td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = 0.99)
                 # NOTE(junweiluo): 修改TD Loss的形式
                 advantages_normalization = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
@@ -956,7 +977,9 @@ class CustomPPO(OnPolicyAlgorithm):
             preds.append(v)
 
         gae_advantages = th.cat(targets)
-        returns = gae_advantages + target_values
+        # dae_advantages = self._compute_gae_like_advantages_(target_advantages, lengths)
+        dae_advantages = target_advantages
+        returns = dae_advantages + target_values
         preds = th.cat(preds)
 
         var_y = th.var(returns).item()
@@ -971,9 +994,9 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("values/value_diff_p90", diff.quantile(0.9).item())
         
 
-        # dae_advantages = self._compute_gae_like_advantages_(target_advantages, lengths)
-        # gae_dae_corr = ((dae_advantages - dae_advantages.mean()) * (gae_advantages - gae_advantages.mean())).mean() / (dae_advantages.std() * gae_advantages.std() + 1e-10)
-        # self.logger.record("train/gae_dae_corr", gae_dae_corr.detach().cpu().mean().item())
+        
+        gae_dae_corr = ((dae_advantages - dae_advantages.mean()) * (gae_advantages - gae_advantages.mean())).mean() / (dae_advantages.std() * gae_advantages.std() + 1e-10)
+        self.logger.record("train/gae_dae_corr", gae_dae_corr.detach().cpu().mean().item())
         
         # update advantage for policy update.
         # gae-like lambda linear anneal from self.gae_like_lambda to max_gae_like_lambda
