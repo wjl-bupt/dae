@@ -273,8 +273,8 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # divs = J.squeeze(1)
         divs = J.diagonal(dim1=1,dim2=2)
         
-        # advantages = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True))).mean(1) 
-        advantages = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True))).sum(1) 
+        advantages = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True))).mean(1) 
+        # advantages = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True))).sum(1) 
         
         values = self.value_net(latent_vf)
         # sigma_state = self.log_sigma_state(latent_vf).exp().squeeze(-1)
