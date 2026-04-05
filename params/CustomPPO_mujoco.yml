@@ -13,13 +13,13 @@ use_huber_loss: true
 dae_discouple_correction: false
 dual_clip_coef: 2.0
 kl_coef: 0.0
-vf_coef: 2.0
+vf_coef: 1.5
 corr_coef: 0.0
 learning_rate:
     init: 0.00025
     final: 0
     ftype: "linear"
-learning_rate_vf: 0.00030
+learning_rate_vf: 0.00025
 n_epochs: 10
 n_epochs_vf: 10
 n_steps: 128

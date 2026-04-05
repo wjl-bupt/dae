@@ -850,7 +850,6 @@ class CustomPPO(OnPolicyAlgorithm):
                 # pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
                 # value loss
                 target_returns = target_values + target_advantages
-                value_loss_unclipped = (th.cat(values) - target_returns).square()
                 value_clipped = target_values + th.clamp(
                     th.cat(values) - target_values,
                     - 0.2,
@@ -861,11 +860,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 value_loss_clipped = (value_clipped - target_returns).square()
 
                 # 4. take max (PPO style)
-                main_value_loss_1 = th.max(
-                    value_loss_unclipped,
-                    value_loss_clipped
-                )      
-                
+                main_value_loss_1 = (value_loss_clipped - target_returns).square()
                 # advantage loss
                 main_value_loss_2, beta = self._value_loss(
                     rewards.split(lengths), 
