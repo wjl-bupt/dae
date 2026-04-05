@@ -131,9 +131,13 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         )
         self.value_net = nn.Linear(hidden_dim, 1)
         self.advantage_head = nn.Sequential(
-            nn.Linear(hidden_dim + self.action_space.shape[0] , hidden_dim * 2),
-            self.advantage_activate_func,
-            nn.Linear(hidden_dim * 2, self.action_space.shape[0]),
+            # nn.Linear(hidden_dim + self.action_space.shape[0] , hidden_dim * 2),
+            # self.advantage_activate_func,
+            # nn.Linear(hidden_dim * 2, self.action_space.shape[0]),
+            SimBaEncoder(input_dim = self.observation_space.shape[0] + self.action_space.shape[0], block_num = 2,
+                         hidden_dim = hidden_dim, activation = self.activate_func),
+            nn.Linear(hidden_dim, self.action_space.shape[0])
+            
         )
 
         # Init weights: use orthogonal initialization
@@ -257,7 +261,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         latent_vf = self.value_feature_extractor(obs)
         # latent_adv = self.advantage_feature_extractor(obs)
         # shape is [Batch, act_dim]
-        fs = self.advantage_head(th.cat([latent_vf, actions], dim = 1))
+        fs = self.advantage_head(th.cat([obs, actions], dim = 1))
         # ws = self.advantage_net(th.cat([latent_vf, actions], dim = 1))
         with th.no_grad():
             sigma = th.exp(log_std)
@@ -269,7 +273,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             return self.advantage_head(inp)
 
         # # with th.no_grad():
-        J = vmap(jacrev(f_single))(actions, latent_vf)  # [B,K,K]
+        J = vmap(jacrev(f_single))(actions, obs)  # [B,K,K]
         # divs = J.squeeze(1)
         divs = J.diagonal(dim1=1,dim2=2)
         
