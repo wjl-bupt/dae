@@ -509,6 +509,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 use_gae_like = True,
             )
         huber_loss_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix,  self.gae_like_lambdadiscount_matrix, self.discount_vector)
+        self._vf_update_step = 0
 
         for epoch in range(self.n_epochs):
             # with th.no_grad():
@@ -542,6 +543,11 @@ class CustomPPO(OnPolicyAlgorithm):
                     divs,
                     fs,
                 ) = self.policy.evaluate_state(data.observations, actions, mu, old_log_std, old_log_std)
+                update_A =  (self._vf_update_step % self.delay_A_update == 0) and (self._vf_update_step > 0)
+                if not update_A:
+                    advantages = advantages.detach()
+                else:
+                    advantages = advantages
 
                 # value loss
                 values = values.flatten().split(lengths)
@@ -600,6 +606,11 @@ class CustomPPO(OnPolicyAlgorithm):
                 losses.append(loss.item())
                 self.policy.optimizer.zero_grad(set_to_none=True)
                 loss.backward()
+                
+                if not update_A:
+                    for p in self.policy.advantage_head.parameters():
+                        if p.grad is not None:
+                            p.grad = None
                 gnorm = th.norm(
                     th.stack(
                         [
@@ -627,6 +638,8 @@ class CustomPPO(OnPolicyAlgorithm):
 
                 # ex_advs.extend(ex_adv.detach().cpu().numpy().flatten().tolist())
                 self._n_updates += 1
+                self._vf_update_step += 1
+
                 
             
             # if kl_loss.mean().item() >= 0.05:
@@ -807,6 +820,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self.policy.zero_grad(set_to_none=True)
         self.policy.optimizer.zero_grad(set_to_none=True)
         self.policy.optimizer_vf.zero_grad(set_to_none=True)
+        self._vf_update_step  = 0
         for epoch in range(self.n_epochs_vf):
             for data in self.rollout_buffer.get_trajs(batch_size=self.batch_size_vf):
                 old_log_policies = data.old_log_policies
@@ -827,7 +841,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 ) = self.policy.predict_value(
                     data.observations, actions, mu, old_log_std, noise = data.noises, return_all = True
                 )
-                update_A = (self._vf_update_step % self.delay_A_update == 0)
+                update_A =  (self._vf_update_step % self.delay_A_update == 0) and (self._vf_update_step > 0)
 
                 if not update_A:
                     advantages = advantages.detach()
@@ -864,7 +878,6 @@ class CustomPPO(OnPolicyAlgorithm):
                 # add a new loss penalty
                 self.policy.optimizer_vf.zero_grad(set_to_none=True)
                 value_loss.backward()
-                update_A =  (self._vf_update_step % self.delay_A_update == 0)
                 if not update_A:
                     for p in self.policy.advantage_head.parameters():
                         if p.grad is not None:

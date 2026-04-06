@@ -1,6 +1,6 @@
 advantage_normalization: true
-batch_size: 512
-batch_size_vf: 512
+batch_size: 256
+batch_size_vf: 256
 clip_range:
     init: 0.1
     final: 0.1
@@ -15,7 +15,7 @@ dual_clip_coef: 2.0
 kl_coef: 0.0
 vf_coef: 1.5
 corr_coef: 0.0
-delay_update: 10
+delay_update: 20
 learning_rate:
     init: 0.00015
     final: 0
