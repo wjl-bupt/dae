@@ -798,7 +798,7 @@ class CustomPPO(OnPolicyAlgorithm):
             gae_like_lambda = self.gae_like_lambda,
             use_gae_like = False,
         )
-        huber_loss_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix,  self.gae_like_lambdadiscount_matrix, self.discount_vector)
+        huber_loss_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
         
         self.policy.zero_grad(set_to_none=True)
         self.policy.optimizer.zero_grad(set_to_none=True)
@@ -921,23 +921,20 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("train/huber_loss_beta", beta)
         
         # 计算一下value network的评估是否准确
-        targets = []
-        preds = []
+        target_returns = []
         # deltas = (rewards - advantages).split(lengths)
         
-        for d, v, l in zip(td_error.split(lengths), values, last_values):
+        for r, a, l in zip(rewards.split(lengths), advantages.split(lengths), last_values):
             target = (
-                self.gae_like_lambdadiscount_matrix[: len(d), : len(d)].matmul(d)
-                # + l * self.discount_vector[-len(d):]
+                self.discount_matrix1[: len(r), : len(r)].matmul(r)
+                - self.discount_matrix2[: len(a), : len(a)].matmul(a)
+                + l * self.discount_vector[-len(r):]
             )
 
-            targets.append(target)
-            preds.append(v)
+            target_returns.append(target)
 
-        gae_advantages = th.cat(targets)
-        dae_advantages = self._compute_gae_like_advantages_(target_advantages, lengths)
-        returns = dae_advantages + target_values
-        preds = th.cat(preds)
+        returns = th.cat(target_returns)
+        preds = th.cat(values)
 
         var_y = th.var(returns).item()
         if var_y < 1e-8:
@@ -949,17 +946,6 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("values/value_diff_media", diff.median().item())
         self.logger.record("values/value_diff_p50", diff.quantile(0.5).item())
         self.logger.record("values/value_diff_p90", diff.quantile(0.9).item())
-        
-
-        
-        gae_dae_corr = ((dae_advantages - dae_advantages.mean()) * (gae_advantages - gae_advantages.mean())).mean() / (dae_advantages.std() * gae_advantages.std() + 1e-10)
-        self.logger.record("train/gae_dae_corr", gae_dae_corr.detach().cpu().mean().item())
-        
-        # update advantage for policy update.
-        # gae-like lambda linear anneal from self.gae_like_lambda to max_gae_like_lambda
-        # 
-        # max_gae_like_lambda = 0.95
-        # current_gae_like_lambda = self.lambda_schedule(self._current_progress_remaining, max_gae_like_lambda, self.gae_like_lambda)
         
         
         self.rollout_buffer.update_advantage(

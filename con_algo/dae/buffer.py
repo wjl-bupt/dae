@@ -360,9 +360,9 @@ class CustomBuffer(BaseBuffer):
         for r, a, l in zip(traj_rew, traj_adv, traj_last_value):
             target = (
                 discount_matrix1[: len(r), : len(r)].matmul(r)
-                # - discount_matrix2[: len(a), : len(a)].matmul(a)
+                - discount_matrix2[: len(a), : len(a)].matmul(a)
                 + l * discount_vector[-len(r):]
-                - a
+                # - a
             )
             target_returns.append(target)
 
