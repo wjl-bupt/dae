@@ -494,20 +494,25 @@ class CustomPPO(OnPolicyAlgorithm):
         losses, value_losses, pg_losses, kl_divs = [], [], [], []
         gnorm_max, gnorm_min = 0, float("inf")
         q_values = []
-        log_std = self.policy.log_std.detach()
-        # log_std = th.clamp(log_std, -4, 2)
+        old_log_std = self.policy.log_std.detach()
 
         # with th.no_grad():
         #     self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size, gamma = self.gamma, gae_like_lambda = self.gae_like_lambda)        
 
+        self.rollout_buffer.update_advantage(
+            self.policy, 
+            log_std = old_log_std, 
+            batch_size =self.batch_size, 
+            gamma = self.gamma, 
+            gae_like_lambda = self.gae_like_lambda,
+            use_gae_like = True,
+        )
+        huber_loss_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix,  self.gae_like_lambdadiscount_matrix, self.discount_vector)
 
         for epoch in range(self.n_epochs):
             with th.no_grad():
-                self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size)
+                self.rollout_buffer.update_advantage(self.policy, log_std = old_log_std, batch_size =self.batch_size)
             #     self.rollout_buffer.update_value(self.policy, batch_size =self.batch_size)
-            ex_advs = []
-            # if self.advantage_normalization:
-            #     self.rollout_buffer.advantages = (self.rollout_buffer.advantages - self.rollout_buffer.advantages.mean()) / (self.rollout_buffer.advantages.std() + 1e-8)
 
             for data in self.rollout_buffer.get_trajs(batch_size=self.batch_size):
                 # old_policies = data.old_policies
@@ -517,9 +522,8 @@ class CustomPPO(OnPolicyAlgorithm):
                 rewards = data.rewards
                 last_values = data.last_values
                 lengths = data.lengths
-                old_advantages = data.advantages
                 target_values = data.values
-                # log_std = data.noises
+                target_advantages = data.advantages
 
                 (
                     values,
@@ -529,66 +533,31 @@ class CustomPPO(OnPolicyAlgorithm):
                     scores,
                     divs,
                     fs,
-                ) = self.policy.evaluate_state(data.observations, actions, mu, log_std, log_std)
+                ) = self.policy.evaluate_state(data.observations, actions, mu, old_log_std, old_log_std)
 
                 # value loss
                 values = values.flatten().split(lengths)
                 
                 
-                # origin loss
-                if self.dae_discouple_correction == False:
-                    # - advantages
-                    deltas = (
-                        rewards - advantages
-                    ).split(lengths)
-                    # pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
-                    main_value_loss, beta = self._value_loss(
-                        rewards.split(lengths),
-                        advantages.split(lengths),
-                        values,
-                        last_values
-                    )
-                    advantages_ = advantages.detach().clone()
-                    td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = 0.99)
-                    td_loss = 0.5 * (advantages - td_error).square().mean()
-                    corr = ((advantages - advantages.mean()) * (td_error - td_error.mean())).mean() / (td_error.std(unbiased = False) * advantages.std(unbiased = False) + 1e-10)
-                    td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
-                    value_loss = main_value_loss + self.corr_coef * (1 - corr)
-                    # advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
-                # discouple loss
-                else:
-                    # discouple dae loss
-                    # 1. we train value network with dae-loss (advantage detach, value keep grad)
-                    #  \sum_{k=0}^{T-t-1} \gamma^{k}(r_{t+k} - \hat{A}_{t+k}.detach()) + \gamma^{T-t} V_{T-t+1} - V_{t}
-                    # 2. we add a regularization for td error: 
-                    #  (r_{t} + \gamma V_{t+1}^{target} - V_{t} - \hat{A}_{t})^2
-                    
-                    # calculate original dae loss with detach A(s,a)
-                    advantages_ = advantages.detach().clone()
-                    deltas = (rewards - old_advantages).split(lengths)
-                    pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
-                    main_value_loss, beta = self._value_loss(
-                        rewards.split(lengths),
-                        advantages.split(lengths),
-                        # values,
-                        pred_values.flatten().split(lengths), 
-                        last_values
-                    )
-                    main_value_loss = main_value_loss.mean()
-                    next_advantages = self.gamma * self.gae_like_lambda * th.roll(old_advantages, -1)
-                    next_advantages[th.cumsum(th.tensor(lengths), 0) - 1] = 0
-                    # main_value_loss = (main_value_loss / (div.pow(2) + 1e-10) + 2  * div.log()).mean()
-                    # calculate a auxlimary regularization for td error
-                    # don't optimizer combine loss
-                    td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = self.gamma)
-                    td_loss = (0.5 * (advantages - next_advantages - td_error).square()).mean()
-                    # td_loss = th.nn.functional.huber_loss(advanges_norm_, td_error_norm, delta = 1.0).mean()
-                    td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
-                    corr = ((advantages - advantages.mean()) * (td_error - td_error.mean())).mean() / (td_error.std(unbiased = False) * advantages.std(unbiased = False) + 1e-10)
-                    # 0.2 * td_error.var()  - 0.1 * advantages.var()
-                    # add a coef for td loss
-                    value_loss = main_value_loss + 0.1 * td_loss
-                    # advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
+                # - advantages
+                deltas = (
+                    rewards - advantages
+                ).split(lengths)
+                # pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
+                main_value_loss, beta = self._value_loss(
+                    rewards.split(lengths),
+                    advantages.split(lengths),
+                    values,
+                    last_values,
+                    huber_loss_beta,
+                )
+                advantages_ = advantages.detach().clone()
+                td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = 0.99)
+                td_loss = 0.5 * (advantages - td_error).square().mean()
+                corr = ((advantages - advantages.mean()) * (td_error - td_error.mean())).mean() / (td_error.std(unbiased = False) * advantages.std(unbiased = False) + 1e-10)
+                td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
+                value_loss = main_value_loss + self.corr_coef * (1 - corr)
+                # advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
 
                 
                 # kl divergence
@@ -597,7 +566,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 # )
 
                 # normalize adv
-                advantages_ = old_advantages.clone()
+                advantages_ = target_advantages.clone()
                 if self.advantage_normalization:
                     advantages_norm = self._normalize_advantage(advantages_, policies = None)
 
@@ -681,8 +650,8 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
         self.logger.record("train/ratio_mean", ratio.detach().cpu().mean().item())
         # self.logger.record("train/trace", trace.cpu().mean().item())
-        self.logger.record("train/log_std", log_std.mean().item())  
-        self.logger.record("train/std", log_std.exp().mean().item()) 
+        self.logger.record("train/log_std", old_log_std.mean().item())  
+        self.logger.record("train/std", old_log_std.exp().mean().item()) 
         self.logger.record("train/td_loss", td_loss.detach().cpu().mean().item())
         self.logger.record("train/td_direct_corr", td_direct_corr.detach().cpu().mean().item())
         self.logger.record("train/rew_adv_delta", th.cat(deltas).detach().cpu().mean().item())
@@ -751,29 +720,39 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("scores/scores_mean", scores.detach().cpu().mean().item())
         self.logger.record("scores/scores_min", scores.detach().cpu().min().item())
         self.logger.record("scores/scores_std", scores.detach().cpu().std().item())
+        self.logger.record("train/huber_loss_beta", beta)
+        
         # 计算一下value network的评估是否准确
         targets = []
         preds = []
-
-        for d, v, l in zip(deltas, values, last_values):
-
+        # deltas = (rewards - advantages).split(lengths)
+        
+        for d, v, l in zip(td_error.split(lengths), values, last_values):
             target = (
-                self.discount_matrix[:len(d), :len(d)].matmul(d)
-                + l * self.discount_vector[-len(d):]
+                self.gae_like_lambdadiscount_matrix[: len(d), : len(d)].matmul(d)
+                # + l * self.discount_vector[-len(d):]
             )
 
             targets.append(target)
             preds.append(v)
 
-        targets = th.cat(targets)
+        gae_advantages = th.cat(targets)
+        dae_advantages = self._compute_gae_like_advantages_(target_advantages, lengths)
+        dae_advantages = target_advantages.detach()
+        returns = dae_advantages + target_values
         preds = th.cat(preds)
-
-        var_y = th.var(targets)
+        var_y = th.var(returns).item()
         if var_y < 1e-8:
             var_y =  th.tensor(0.0)
-
-        explain_var =  1 - th.var(targets - preds) / var_y  
-        self.logger.record("train/explained_variance", explain_var.cpu().mean().item())
+        explain_var =  np.nan if var_y == 0 else float(1 - th.var(returns - preds).item() / var_y)  
+        self.logger.record("train/explained_variance", explain_var)
+        # 记录一下value是否被低估
+        diff = (returns - preds).detach().cpu()
+        self.logger.record("values/value_diff_media", diff.median().item())
+        self.logger.record("values/value_diff_p50", diff.quantile(0.5).item())
+        self.logger.record("values/value_diff_p90", diff.quantile(0.9).item())
+        gae_dae_corr = ((dae_advantages - dae_advantages.mean()) * (gae_advantages - gae_advantages.mean())).mean() / (dae_advantages.std() * gae_advantages.std() + 1e-10)
+        self.logger.record("train/gae_dae_corr", gae_dae_corr.detach().cpu().mean().item())
 
 
     def lambda_schedule(self, p, max_lambda, lambda_, k=10, c=0.3):

@@ -356,17 +356,18 @@ class CustomBuffer(BaseBuffer):
         traj_rew = self.rewards.split(self.lengths)
         traj_adv = self.advantages.split(self.lengths)
         traj_last_value = self.last_values
-        targets = []
+        target_returns = []
         for r, a, l in zip(traj_rew, traj_adv, traj_last_value):
             target = (
                 discount_matrix1[: len(r), : len(r)].matmul(r)
-                - discount_matrix2[: len(a), : len(a)].matmul(a)
+                # - discount_matrix2[: len(a), : len(a)].matmul(a)
                 + l * discount_vector[-len(r):]
+                - a
             )
-            targets.append(target)
+            target_returns.append(target)
 
-        targets = th.cat(targets)
-        beta = targets.std().detach().item()
+        target_returns = th.cat(target_returns)
+        beta = target_returns.std().detach().item()
         # if th.isnan(th.tensor(beta)):
         #     raise ValueError(f"beta is NaN: {beta}, sample shape is {targets.shape}, sample var is {targets.var(unbiased=False).item()}, target max value is {targets.max().item()}, target min value is {targets.min().item()}, traj adv max value is {max([a.max().item() for a in traj_adv])}, traj adv min value is {min([a.min().item() for a in traj_adv])}. last value max value is {max(traj_last_value)}, last value min value is {min(traj_last_value)}")
         return beta

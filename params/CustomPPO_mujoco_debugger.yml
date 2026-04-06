@@ -23,6 +23,6 @@ learning_rate_vf: 0.00025
 n_epochs: 10
 n_epochs_vf: 10
 n_steps: 128
-shared: false
+shared: true
 nenvs: 4
 nheads: 1
