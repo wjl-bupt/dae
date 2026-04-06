@@ -152,6 +152,8 @@ class CustomPPO(OnPolicyAlgorithm):
         self.dual_clip_coef = dual_clip_coef
         # corr coef decay threshold, when progress remaining is smaller than this value, we start to decay the corr coef
         self.corr_coef_decay_threshold = 0.8
+        self._vf_update_step = 0
+        self.delay_A_update = 10
 
         if not shared:
             warnings.warn(
@@ -624,6 +626,7 @@ class CustomPPO(OnPolicyAlgorithm):
 
                 # ex_advs.extend(ex_adv.detach().cpu().numpy().flatten().tolist())
                 self._n_updates += 1
+                
             
             # if kl_loss.mean().item() >= 0.05:
             #     break
@@ -823,6 +826,12 @@ class CustomPPO(OnPolicyAlgorithm):
                 ) = self.policy.predict_value(
                     data.observations, actions, mu, old_log_std, noise = data.noises, return_all = True
                 )
+                update_A = (self._vf_update_step % self.delay_A_update == 0)
+
+                if not update_A:
+                    advantages = advantages.detach()
+                else:
+                    advantages = advantages
                 # value loss
                 values = values.flatten().split(lengths)
                 pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
@@ -853,6 +862,11 @@ class CustomPPO(OnPolicyAlgorithm):
                 # add a new loss penalty
                 self.policy.optimizer_vf.zero_grad(set_to_none=True)
                 value_loss.backward()
+                update_A =  (self._vf_update_step % self.delay_A_update == 0)
+                if not update_A:
+                    for p in self.policy.advantage_head.parameters():
+                        if p.grad is not None:
+                            p.grad = None
                 gnorm = th.norm(
                     th.stack(
                         [
@@ -864,6 +878,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 )
                 th.nn.utils.clip_grad_norm_(self.policy.modules_vf.parameters(), self.max_grad_norm)
                 self.policy.optimizer_vf.step()
+                self._vf_update_step += 1
 
                 # logging
                 value_losses.append(main_value_loss.item())
@@ -926,8 +941,8 @@ class CustomPPO(OnPolicyAlgorithm):
         
         for r, a, l in zip(rewards.split(lengths), advantages.split(lengths), last_values):
             target = (
-                self.discount_matrix1[: len(r), : len(r)].matmul(r)
-                - self.discount_matrix2[: len(a), : len(a)].matmul(a)
+                self.discount_matrix[: len(r), : len(r)].matmul(r)
+                - self.discount_matrix[: len(a), : len(a)].matmul(a)
                 + l * self.discount_vector[-len(r):]
             )
 
