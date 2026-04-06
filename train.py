@@ -203,7 +203,7 @@ def get_mujoco_env(e, envs, args, logdir):
     env = make_vec_env(
         env_id=e,
         n_envs=envs,
-        seed=args.seed,
+        seed=args.seed * envs,
         vec_env_cls=CustomVecEnv,
         vec_env_kwargs=dict(threads=args.threads),
         # wrapper_class = wrapper,
