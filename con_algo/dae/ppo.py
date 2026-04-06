@@ -840,8 +840,8 @@ class CustomPPO(OnPolicyAlgorithm):
                 main_value_loss, beta = self._value_loss(
                     rewards.split(lengths), 
                     advantages.split(lengths), 
-                    # pred_values.split(lengths), 
-                    values,
+                    pred_values.split(lengths), 
+                    # values,
                     last_values,
                     beta = huber_loss_beta,
                 )

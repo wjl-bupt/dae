@@ -7,7 +7,7 @@ clip_range:
     ftype: "linear"
 clip_range_vf: 0.2
 learning_rate:
-    init: 0.00025
+    init: 0.00015
     final: 0
     ftype: "linear"
 n_epochs: 10

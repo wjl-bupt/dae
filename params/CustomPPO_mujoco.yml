@@ -15,15 +15,15 @@ dual_clip_coef: 2.0
 kl_coef: 0.0
 vf_coef: 1.5
 corr_coef: 0.0
-delay_update: 15
+delay_update: 10
 learning_rate:
-    init: 0.00025
+    init: 0.00015
     final: 0
     ftype: "linear"
-learning_rate_vf: 0.00025
+learning_rate_vf: 0.00015
 n_epochs: 10
 n_epochs_vf: 10
 n_steps: 128
-shared: true
+shared: false
 nenvs: 128
 nheads: 1
