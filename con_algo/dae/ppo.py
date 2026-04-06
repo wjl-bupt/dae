@@ -108,6 +108,7 @@ class CustomPPO(OnPolicyAlgorithm):
         corr_coef: float = 0.2,
         use_huber_loss: bool = True,
         dual_clip_coef: float = 3.0,
+        delay_update: int = 10,
     ):  
         super(CustomPPO, self).__init__(
             policy,
@@ -153,7 +154,7 @@ class CustomPPO(OnPolicyAlgorithm):
         # corr coef decay threshold, when progress remaining is smaller than this value, we start to decay the corr coef
         self.corr_coef_decay_threshold = 0.8
         self._vf_update_step = 0
-        self.delay_A_update = 10
+        self.delay_A_update = delay_update
 
         if not shared:
             warnings.warn(
