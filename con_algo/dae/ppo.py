@@ -496,22 +496,27 @@ class CustomPPO(OnPolicyAlgorithm):
         q_values = []
         old_log_std = self.policy.log_std.detach()
 
-        # with th.no_grad():
-        #     self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size, gamma = self.gamma, gae_like_lambda = self.gae_like_lambda)        
-
-        self.rollout_buffer.update_advantage(
-            self.policy, 
-            log_std = old_log_std, 
-            batch_size =self.batch_size, 
-            gamma = self.gamma, 
-            gae_like_lambda = self.gae_like_lambda,
-            use_gae_like = True,
-        )
+        with th.no_grad():
+            self.rollout_buffer.update_advantage(
+                self.policy, 
+                log_std = old_log_std, 
+                batch_size =self.batch_size, 
+                gamma = self.gamma, 
+                gae_like_lambda = self.gae_like_lambda,
+                use_gae_like = True,
+            )
         huber_loss_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix,  self.gae_like_lambdadiscount_matrix, self.discount_vector)
 
         for epoch in range(self.n_epochs):
             with th.no_grad():
-                self.rollout_buffer.update_advantage(self.policy, log_std = old_log_std, batch_size =self.batch_size)
+                self.rollout_buffer.update_advantage(
+                    self.policy, 
+                    log_std = old_log_std, 
+                    batch_size =self.batch_size, 
+                    gamma = self.gamma, 
+                    gae_like_lambda = self.gae_like_lambda,
+                    use_gae_like = True,
+                )
             #     self.rollout_buffer.update_value(self.policy, batch_size =self.batch_size)
 
             for data in self.rollout_buffer.get_trajs(batch_size=self.batch_size):
