@@ -841,7 +841,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 ) = self.policy.predict_value(
                     data.observations, actions, mu, old_log_std, noise = data.noises, return_all = True
                 )
-                update_A =  (self._vf_update_step % self.delay_A_update == 0) and (self._vf_update_step > 0)
+                update_A =  (self._vf_update_step % self.delay_A_update == 0)
 
                 if not update_A:
                     advantages = advantages.detach()
