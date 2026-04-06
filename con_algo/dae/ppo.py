@@ -508,15 +508,15 @@ class CustomPPO(OnPolicyAlgorithm):
         huber_loss_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix,  self.gae_like_lambdadiscount_matrix, self.discount_vector)
 
         for epoch in range(self.n_epochs):
-            with th.no_grad():
-                self.rollout_buffer.update_advantage(
-                    self.policy, 
-                    log_std = old_log_std, 
-                    batch_size =self.batch_size, 
-                    gamma = self.gamma, 
-                    gae_like_lambda = self.gae_like_lambda,
-                    use_gae_like = True,
-                )
+            # with th.no_grad():
+            #     self.rollout_buffer.update_advantage(
+            #         self.policy, 
+            #         log_std = old_log_std, 
+            #         batch_size =self.batch_size, 
+            #         gamma = self.gamma, 
+            #         gae_like_lambda = self.gae_like_lambda,
+            #         use_gae_like = True,
+            #     )
             #     self.rollout_buffer.update_value(self.policy, batch_size =self.batch_size)
 
             for data in self.rollout_buffer.get_trajs(batch_size=self.batch_size):
@@ -548,28 +548,24 @@ class CustomPPO(OnPolicyAlgorithm):
                 deltas = (
                     rewards - advantages
                 ).split(lengths)
-                # pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
-                main_value_loss, beta = self._value_loss(
+                pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
+                main_value_loss_1, beta = self._value_loss(
                     rewards.split(lengths),
                     advantages.split(lengths),
-                    values,
+                    target_values.split(lengths),
+                    # pred_values.split(lengths),
                     last_values,
                     huber_loss_beta,
                 )
+                
+                main_value_loss_2 = 0.5 * (target_values + target_advantages - th.cat(values)).square().mean()
+                main_value_loss = main_value_loss_1 + main_value_loss_2
                 advantages_ = advantages.detach().clone()
                 td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = 0.99)
                 td_loss = 0.5 * (advantages - td_error).square().mean()
                 corr = ((advantages - advantages.mean()) * (td_error - td_error.mean())).mean() / (td_error.std(unbiased = False) * advantages.std(unbiased = False) + 1e-10)
                 td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                 value_loss = main_value_loss + self.corr_coef * (1 - corr)
-                # advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
-
-                
-                # kl divergence
-                # kl_loss = (
-                #     (old_policies * (old_log_policies - log_policies)).sum(dim=1).mean()
-                # )
-
                 # normalize adv
                 advantages_ = target_advantages.clone()
                 if self.advantage_normalization:
