@@ -278,7 +278,13 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # divs = J.squeeze(1)
         divs = J.diagonal(dim1=1,dim2=2)
         
-        advantages = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True))).mean(1) 
+        # advantages = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True))).mean(1) 
+        # 使用平方和然后开方的方式，减少极端值影响
+        advantage_components = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True)))
+        advantages = th.sign(advantage_components.mean(1)) * th.sqrt(th.clamp(advantage_components.pow(2).mean(1), min=1e-10))
+        # 提供两种思路:
+        # 1. 在多输出一个weights头，用于权衡不同的weights
+        
         # advantages = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True))).sum(1) 
         
         values = self.value_net(latent_vf)

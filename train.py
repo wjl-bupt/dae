@@ -386,7 +386,7 @@ if __name__ == "__main__":
                 features_extractor_class=SimBaFeaturesExtractor,
                 features_extractor_kwargs=dict(
                     block_num=2,
-                    hidden_dim=256,
+                    hidden_dim=64,
                     activation=nn.Tanh(),
                 ),
                 net_arch=dict(pi=[], vf=[]), 
