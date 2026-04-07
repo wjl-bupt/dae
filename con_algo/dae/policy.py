@@ -113,7 +113,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         self.advantage_activate_func = nn.Tanh()
         self.activate_func = nn.Tanh()
 
-        hidden_dim = 256
+        hidden_dim = 64
         self.actor_feature_extractor = nn.Sequential(
             # layer_init(nn.Linear(self.observation_space.shape[0], hidden_dim)),
             # self.actor_activate_func,
