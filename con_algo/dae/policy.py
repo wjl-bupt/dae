@@ -130,10 +130,11 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             hidden_dim = hidden_dim, activation = self.activate_func
         )
         self.value_net = nn.Linear(hidden_dim, 1)
+        self.advantage_feature_extractor = SimBaEncoder(
+            input_dim = self.observation_space.shape[0], block_num = 2,
+            hidden_dim = hidden_dim, activation = self.activate_func
+        )
         self.advantage_head = nn.Sequential(
-            # SimBaEncoder(input_dim = self.observation_space.shape[0] + self.action_space.shape[0], block_num = 2,
-            #              hidden_dim = hidden_dim, activation = self.activate_func),
-            # nn.Linear(hidden_dim, hidden_dim * 2),
             nn.Linear(hidden_dim + self.action_space.shape[0] , hidden_dim * 2),
             self.advantage_activate_func,
             nn.Linear(hidden_dim * 2 , hidden_dim * 2),
@@ -152,7 +153,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             module_gains = {
                 self.actor_feature_extractor: np.sqrt(2),
                 self.value_feature_extractor: np.sqrt(2),
-                # self.advantage_feature_extractor : np.sqrt(2),
+                self.advantage_feature_extractor : np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net : 1.0,
                 self.advantage_head : 0.1,
@@ -174,7 +175,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             )
             # self.advantage_feature_extractor,
             self.modules_vf = nn.ModuleList(
-                [self.value_feature_extractor, 
+                [self.value_feature_extractor, self.advantage_feature_extractor,
                  self.value_net, self.advantage_head,
                  self.weights_heads,
             ])
@@ -263,9 +264,10 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         entropy = dist.entropy()
         # shape is [B, B, D]
         latent_vf = self.value_feature_extractor(obs)
-        # latent_adv = self.advantage_feature_extractor(obs)
+        latent_adv = self.advantage_feature_extractor(obs)
         # shape is [Batch, act_dim]
-        fs = self.advantage_head(th.cat([latent_vf, actions], dim = 1))
+        fs = self.advantage_head(th.cat([latent_adv, actions], dim = 1))
+        
         # ws = self.advantage_net(th.cat([latent_vf, actions], dim = 1))
         with th.no_grad():
             sigma = th.exp(log_std)
@@ -277,7 +279,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             return self.advantage_head(inp)
 
         # # with th.no_grad():
-        J = vmap(jacrev(f_single))(actions, latent_vf.detach())  # [B,K,K]
+        J = vmap(jacrev(f_single))(actions, latent_adv)  # [B,K,K]
         # divs = J.squeeze(1)
         divs = J.diagonal(dim1=1,dim2=2)
         
@@ -290,12 +292,12 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         
         # 3. 在多输出一个weights头，用于权衡不同的weights
         advantage_components = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True)))
-        weights = self.weights_heads(latent_vf)
+        weights = self.weights_heads(latent_adv)
         advantages = (advantage_components * th.nn.functional.softmax(weights, dim = 1)).sum(1)
         
         values = self.value_net(latent_vf)
         
-        return values, advantages, log_policies, entropy, scores, divs, fs
+        return values, advantages, log_policies, entropy, scores, divs, th.nn.functional.softmax(weights, dim = 1)
         # return values, advantages, log_probs, distribution.entropy()
     
     def evaluate_state(

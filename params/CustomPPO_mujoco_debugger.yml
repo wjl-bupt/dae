@@ -15,7 +15,7 @@ dual_clip_coef: 2.0
 kl_coef: 0.0
 vf_coef: 1.0
 corr_coef: 0.0
-delay_update: 20
+delay_update: 1
 learning_rate:
     init: 0.00025
     final: 0
