@@ -13,7 +13,7 @@ use_huber_loss: true
 dae_discouple_correction: false
 dual_clip_coef: 2.0
 kl_coef: 0.0
-vf_coef: 1.5
+vf_coef: 1.0
 corr_coef: 0.0
 delay_update: 1
 learning_rate:
@@ -25,5 +25,5 @@ n_epochs: 10
 n_epochs_vf: 10
 n_steps: 128
 shared: false
-nenvs: 128
+nenvs: 32
 nheads: 1
