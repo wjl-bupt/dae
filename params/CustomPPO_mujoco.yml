@@ -17,11 +17,11 @@ vf_coef: 1.5
 corr_coef: 0.1
 delay_update: 1
 learning_rate:
-    init: 0.00025
+    init: 0.00015
     final: 0
     ftype: "linear"
-learning_rate_vf: 0.00025
-n_epochs: 10
+learning_rate_vf: 0.00020
+n_epochs: 6
 n_epochs_vf: 10
 n_steps: 128
 shared: false

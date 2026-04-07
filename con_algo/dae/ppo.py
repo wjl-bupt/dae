@@ -325,7 +325,7 @@ class CustomPPO(OnPolicyAlgorithm):
             return loss, 0.0
         # use Adaptive Scale Huber Loss
         # \beta = Std(G_t)
-        # Loss = th.nn.functional.smooth_l1_loss
+        # Loss = th.nn.functional.smooth_l1_loss(preds, targets, beta=beta, reduction="mean")
         else:
             preds = []
             targets = []

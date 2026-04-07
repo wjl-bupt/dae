@@ -131,10 +131,10 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         )
         self.value_net = nn.Linear(hidden_dim, 1)
         self.advantage_head = nn.Sequential(
-            SimBaEncoder(input_dim = self.observation_space.shape[0] + self.action_space.shape[0], block_num = 2,
-                         hidden_dim = hidden_dim, activation = self.activate_func),
-            nn.Linear(hidden_dim, hidden_dim * 2),
-            # nn.Linear(hidden_dim + self.action_space.shape[0] , hidden_dim * 2),
+            # SimBaEncoder(input_dim = self.observation_space.shape[0] + self.action_space.shape[0], block_num = 2,
+            #              hidden_dim = hidden_dim, activation = self.activate_func),
+            # nn.Linear(hidden_dim, hidden_dim * 2),
+            nn.Linear(hidden_dim + self.action_space.shape[0] , hidden_dim * 2),
             self.advantage_activate_func,
             nn.Linear(hidden_dim * 2 , hidden_dim * 2),
             self.advantage_activate_func,
@@ -262,7 +262,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         latent_vf = self.value_feature_extractor(obs)
         # latent_adv = self.advantage_feature_extractor(obs)
         # shape is [Batch, act_dim]
-        fs = self.advantage_head(th.cat([obs, actions], dim = 1))
+        fs = self.advantage_head(th.cat([latent_vf, actions], dim = 1))
         # ws = self.advantage_net(th.cat([latent_vf, actions], dim = 1))
         with th.no_grad():
             sigma = th.exp(log_std)
@@ -274,7 +274,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             return self.advantage_head(inp)
 
         # # with th.no_grad():
-        J = vmap(jacrev(f_single))(actions, obs)  # [B,K,K]
+        J = vmap(jacrev(f_single))(actions, latent_vf.detach())  # [B,K,K]
         # divs = J.squeeze(1)
         divs = J.diagonal(dim1=1,dim2=2)
         
@@ -282,7 +282,6 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # advantages = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True))).sum(1) 
         
         values = self.value_net(latent_vf)
-        # sigma_state = self.log_sigma_state(latent_vf).exp().squeeze(-1)
         
         return values, advantages, log_policies, entropy, scores, divs, fs
         # return values, advantages, log_probs, distribution.entropy()
