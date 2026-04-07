@@ -971,13 +971,13 @@ class CustomPPO(OnPolicyAlgorithm):
             var_y =  th.tensor(0.0)
         explain_var =  np.nan if var_y == 0 else float(1 - th.var(returns - preds).item() / var_y)  
         self.logger.record("train/explained_variance", explain_var)
-        # 记录一下value是否被低估
+        # NOTE(junweiluo): 记录一下value是否被低估了
         diff = (returns - preds).detach().cpu()
         self.logger.record("values/value_diff_media", diff.median().item())
         self.logger.record("values/value_diff_p50", diff.quantile(0.5).item())
         self.logger.record("values/value_diff_p90", diff.quantile(0.9).item())
         
-        
+        # NOTE(junweiluo): 更新buffer中的advantage，供policy使用
         self.rollout_buffer.update_advantage(
             self.policy, 
             log_std = old_log_std, 
