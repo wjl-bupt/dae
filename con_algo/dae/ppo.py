@@ -173,7 +173,7 @@ class CustomPPO(OnPolicyAlgorithm):
             device=self.device,
         )
         
-        self.gae_like_lambdadiscount_matrix = th.tensor(
+        self.lambda_discount_matrix = th.tensor(
             [
                 [0 if j < i else (self.gamma * self.gae_like_lambda) ** (j - i) for j in range(n_steps)]
                 for i in range(n_steps)
@@ -307,14 +307,18 @@ class CustomPPO(OnPolicyAlgorithm):
         # return advantages / (advantages.std() + eps)
         return (advantages - advantages.mean() ) / (advantages.std() + eps)
 
-    def _value_loss(self, rewards, advantages, values, lasts, beta = None):
+    def _value_loss(self, rewards, advantages, values, lasts, beta = None, use_lambda = False):
+        if use_lambda:
+            advantage_discount_matrix = self.lambda_discount_matrix
+        else:
+            advantage_discount_matrix = self.discount_matrix
         # use dae original mse loss
         if self.use_huber_loss == False:
             loss = th.cat(
                 [
                     (
                         self.discount_matrix[: len(r), : len(r)].matmul(r)
-                        - self.discount_matrix[: len(a), : len(a)].matmul(a)
+                        - advantage_discount_matrix[: len(a), : len(a)].matmul(a)
                         + l * self.discount_vector[-len(r) :]
                         - v
                     ).square()
@@ -885,11 +889,12 @@ class CustomPPO(OnPolicyAlgorithm):
                 )
                 main_value_loss_2, beta = self._value_loss(
                     rewards.split(lengths), 
-                    (confidence_lambda * target_advantages).split(lengths), 
+                    target_advantages.split(lengths), 
                     pred_values.split(lengths), 
                     # values,
                     last_values,
                     beta = huber_loss_beta,
+                    use_lambda=True,
                 )
                 main_value_loss = 0.5 * (main_value_loss_1 + main_value_loss_2)
                 value_loss = self.vf_coef * main_value_loss + cur_corr_coef * (1 - corr) 
