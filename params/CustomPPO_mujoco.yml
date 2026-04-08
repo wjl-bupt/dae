@@ -1,6 +1,6 @@
 advantage_normalization: true
-batch_size: 512
-batch_size_vf: 512
+batch_size: 2048
+batch_size_vf: 2048
 clip_range:
     init: 0.1
     final: 0.0
@@ -9,7 +9,7 @@ ent_coef: 0.0
 full_action: false
 gae_like_lambda: 0.95
 use_sub_action_ratio: false
-use_huber_loss: false
+use_huber_loss: true
 dae_discouple_correction: false
 dual_clip_coef: 2.0
 kl_coef: 0.0

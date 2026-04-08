@@ -882,7 +882,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 #  + 0.1 * (1 - corr) 
                 # + cur_corr_coef * (1 - corr)
                 # soft logits
-                confidence_lambda = th.clamp(corr, 1e-5, 1.0)
+                confidence_lambda = th.clamp(corr, 1e-5, 1.0).detach()
                 
                 # value loss
                 main_value_loss, beta = self._value_loss(
