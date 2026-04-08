@@ -851,33 +851,13 @@ class CustomPPO(OnPolicyAlgorithm):
                 values = values.flatten().split(lengths)
                 pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
                 # advantage loss
-                # main_value_loss_1, beta = self._value_loss(
-                #     rewards.split(lengths), 
-                #     advantages.split(lengths), 
-                #     target_values.split(lengths),
-                #     # pred_values.split(lengths), 
-                #     # values,
-                #     last_values,
-                #     beta = huber_loss_beta,
-                # )
-                # main_value_loss_2, beta = self._value_loss(
-                #     rewards.split(lengths), 
-                #     target_advantages.split(lengths), 
-                #     pred_values.split(lengths), 
-                #     # values,
-                #     last_values,
-                #     beta = huber_loss_beta,
-                # )
-                # main_value_loss = main_value_loss_1 + main_value_loss_2
-
-                            
                 td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = 0.99)
                 # NOTE(junweiluo): 修改TD Loss的形式
                 advantages_normalization = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
                 td_error_normalization = (td_error - td_error.mean()) / (td_error.std() + 1e-8)
                 td_loss = 0.5 * (advantages_normalization - td_error_normalization).square().mean()
-                corr = ((advantages - advantages.mean()) * (td_error - td_error.mean())).mean() \
-                    / (td_error.std(unbiased = False) * advantages.std(unbiased = False) + 1e-10)
+                corr = ((target_advantages - target_advantages.mean()) * (td_error - td_error.mean())).mean() \
+                    / (td_error.std(unbiased = False) * target_advantages.std(unbiased = False) + 1e-10)
                 td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                 #  + 0.1 * (1 - corr) 
                 # + cur_corr_coef * (1 - corr)
@@ -885,14 +865,33 @@ class CustomPPO(OnPolicyAlgorithm):
                 confidence_lambda = th.clamp(corr, 1e-5, 1.0).detach()
                 
                 # value loss
-                main_value_loss, beta = self._value_loss(
+                # main_value_loss, beta = self._value_loss(
+                #     rewards.split(lengths), 
+                #     (confidence_lambda * advantages).split(lengths), 
+                #     pred_values.split(lengths), 
+                #     # values,
+                #     last_values,
+                #     beta = huber_loss_beta,
+                # )
+                # value_loss = self.vf_coef * main_value_loss + cur_corr_coef * (1 - corr) 
+                main_value_loss_1, beta = self._value_loss(
                     rewards.split(lengths), 
-                    (confidence_lambda * advantages).split(lengths), 
+                    advantages.split(lengths), 
+                    target_values.split(lengths),
+                    # pred_values.split(lengths), 
+                    # values,
+                    last_values,
+                    beta = huber_loss_beta,
+                )
+                main_value_loss_2, beta = self._value_loss(
+                    rewards.split(lengths), 
+                    (confidence_lambda * target_advantages).split(lengths), 
                     pred_values.split(lengths), 
                     # values,
                     last_values,
                     beta = huber_loss_beta,
                 )
+                main_value_loss = 0.5 * (main_value_loss_1 + main_value_loss_2)
                 value_loss = self.vf_coef * main_value_loss + cur_corr_coef * (1 - corr) 
                 # value_loss = self.vf_coef * value_loss + 0.1 * (1.0 / (advantages.std() + 1.0)).mean() 
                 # value_loss += (ex_adv**2).mean()
