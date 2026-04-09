@@ -173,7 +173,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             self.modules_vf = nn.ModuleList(
                 [self.value_feature_extractor, self.advantage_feature_extractor,
                  self.value_net, self.advantage_head,
-                 self.weights_heads,
+                #  self.weights_heads,
             ])
             # self.lr_vf
             # we will use linear decay in ppo.py
