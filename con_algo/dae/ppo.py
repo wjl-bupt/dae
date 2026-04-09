@@ -348,6 +348,8 @@ class CustomPPO(OnPolicyAlgorithm):
             if beta is None or th.isnan(th.tensor(beta)):
                 # raise ValueError(f"beta is too large: {beta}, sample shape is {targets.shape}, sample var is {targets.var(unbiased=False).item()}")
                 beta = targets.std().detach().item()
+            # ping beta to 0.5
+            beta = 0.5
             loss = th.nn.functional.smooth_l1_loss(preds, targets, beta=beta, reduction="mean")
 
             return loss, beta
@@ -409,19 +411,19 @@ class CustomPPO(OnPolicyAlgorithm):
                 # loss = -psi.mean()
                 
                 # dual clip in ppo
-                log_ratio = logp - old_logp
-                ratio = log_ratio.sum(1).exp()
-                surr1 = ratio * adv
-                surr2 = th.clamp(ratio, 1 - clip_range, 1 + clip_range) * adv
-                clip1 = th.min(surr1, surr2)
-                dual_clip =  self.dual_clip_coef * adv   # c * A（注意 A < 0）
-                loss = th.where(
-                    adv >= 0,
-                    clip1,
-                    th.max(clip1, dual_clip)
-                )
+                # log_ratio = logp - old_logp
+                # ratio = log_ratio.sum(1).exp()
+                # surr1 = ratio * adv
+                # surr2 = th.clamp(ratio, 1 - clip_range, 1 + clip_range) * adv
+                # clip1 = th.min(surr1, surr2)
+                # dual_clip =  self.dual_clip_coef * adv   # c * A（注意 A < 0）
+                # loss = th.where(
+                #     adv >= 0,
+                #     clip1,
+                #     th.max(clip1, dual_clip)
+                # )
 
-                loss = -loss.mean()
+                # loss = -loss.mean()
                 
             
         return loss, ratio
