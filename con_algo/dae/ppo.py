@@ -409,19 +409,19 @@ class CustomPPO(OnPolicyAlgorithm):
                 # loss = -psi.mean()
                 
                 # dual clip in ppo
-                # log_ratio = logp - old_logp
-                # ratio = log_ratio.sum(1).exp()
-                # surr1 = ratio * adv
-                # surr2 = th.clamp(ratio, 1 - clip_range, 1 + clip_range) * adv
-                # clip1 = th.min(surr1, surr2)
-                # dual_clip =  self.dual_clip_coef * adv   # c * A（注意 A < 0）
-                # loss = th.where(
-                #     adv >= 0,
-                #     clip1,
-                #     th.max(clip1, dual_clip)
-                # )
+                log_ratio = logp - old_logp
+                ratio = log_ratio.sum(1).exp()
+                surr1 = ratio * adv
+                surr2 = th.clamp(ratio, 1 - clip_range, 1 + clip_range) * adv
+                clip1 = th.min(surr1, surr2)
+                dual_clip =  self.dual_clip_coef * adv   # c * A（注意 A < 0）
+                loss = th.where(
+                    adv >= 0,
+                    clip1,
+                    th.max(clip1, dual_clip)
+                )
 
-                # loss = -loss.mean()
+                loss = -loss.mean()
                 
             
         return loss, ratio
@@ -773,19 +773,6 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("values/value_diff_p90", diff.quantile(0.9).item())
         gae_dae_corr = ((dae_advantages - dae_advantages.mean()) * (gae_advantages - gae_advantages.mean())).mean() / (dae_advantages.std() * gae_advantages.std() + 1e-10)
         self.logger.record("train/gae_dae_corr", gae_dae_corr.detach().cpu().mean().item())
-
-
-    def lambda_schedule(self, p, max_lambda, lambda_, k=10, c=0.3):
-        x = 1 - p
-
-        def sigmoid(x):
-            return 1 / (1 + math.exp(-k * (x - c)))
-
-        s0 = sigmoid(0)
-        s1 = sigmoid(1)
-        s = (sigmoid(x) - s0) / (s1 - s0)
-
-        return lambda_ + max(0, (max_lambda - lambda_) * s)
 
     def _train_separate(self) -> None:
         cur_corr_coef = self.corr_coef
