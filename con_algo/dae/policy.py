@@ -114,25 +114,21 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         self.activate_func = nn.Tanh()
 
         hidden_dim = 64
-        self.actor_feature_extractor = nn.Sequential(
-            # layer_init(nn.Linear(self.observation_space.shape[0], hidden_dim)),
-            # self.actor_activate_func,
-            # layer_init(nn.Linear(hidden_dim, hidden_dim)),
-            # self.actor_activate_func,
-            SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2,
-                         hidden_dim = hidden_dim, activation = self.activate_func)
+        self.actor_feature_extractor = SimBaEncoder(
+            input_dim = self.observation_space.shape[0], block_num = 2,
+            hidden_dim = hidden_dim, activation = self.activate_func,
         )
         self.action_net = nn.Linear(hidden_dim, self.action_space.shape[0])
         # self.log_std = layer_init(nn.Linear(hidden_dim, self.action_space.shape[0]), std=0.01)
         self.log_std = nn.Parameter(th.zeros(self.action_space.shape[0]) * (-0.6931))
         self.value_feature_extractor = SimBaEncoder(
             input_dim = self.observation_space.shape[0], block_num = 2,
-            hidden_dim = hidden_dim, activation = self.activate_func
+            hidden_dim = hidden_dim, activation = self.activate_func,
         )
         self.value_net = nn.Linear(hidden_dim, 1)
         self.advantage_feature_extractor = SimBaEncoder(
             input_dim = self.observation_space.shape[0], block_num = 2,
-            hidden_dim = hidden_dim, activation = self.activate_func
+            hidden_dim = hidden_dim, activation = self.activate_func,
         )
         self.advantage_head = nn.Sequential(
             nn.Linear(hidden_dim + self.action_space.shape[0] , hidden_dim * 2),
@@ -141,7 +137,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             self.advantage_activate_func,
             nn.Linear(hidden_dim * 2, self.action_space.shape[0]),
         )
-        self.weights_heads = nn.Linear(hidden_dim, self.action_space.shape[0])
+        # self.weights_heads = nn.Linear(hidden_dim, self.action_space.shape[0])
 
         # Init weights: use orthogonal initialization
         # with small initial weight for the output
@@ -157,7 +153,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 self.action_net: 0.01,
                 self.value_net : 1.0,
                 self.advantage_head : 0.1,
-                self.weights_heads : 0.01,
+                # self.weights_heads : 0.01,
                 # self.log_sigma_state: 0.01,
             }
             for module, gain in module_gains.items():
@@ -285,21 +281,22 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         
         # 1. 直接做均值或者sum
         # advantages = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True))).mean(1) 
+        advantages = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True))).sum(1) 
         
         # 2. 使用平方和然后开方的方式，减少极端值影响
         # advantage_components = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True)))
         # advantages = th.sign(advantage_components.mean(1)) * th.sqrt(th.clamp(advantage_components.pow(2).mean(1), min=1e-10))
         
         # 3. 在多输出一个weights头，用于权衡不同的weights
-        advantage_components = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True)))
-        weights = th.nn.functional.softmax(self.weights_heads(latent_adv), dim = 1)
-        advantages = (advantage_components * weights).sum(1)
-        wdist_entropy = -(weights * th.log(weights + 1e-10)).sum(dim=1).mean()
+        # advantage_components = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True)))
+        # weights = th.nn.functional.softmax(self.weights_heads(latent_adv), dim = 1)
+        # advantages = (advantage_components * weights).sum(1)
+        # wdist_entropy = -(weights * th.log(weights + 1e-10)).sum(dim=1).mean()
         
         
         values = self.value_net(latent_vf)
         
-        return values, advantages, log_policies, entropy, scores, divs, weights, wdist_entropy
+        return values, advantages, log_policies, entropy, scores, divs, fs, 0
         # return values, advantages, log_probs, distribution.entropy()
     
     def evaluate_state(

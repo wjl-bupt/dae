@@ -201,9 +201,9 @@ class CustomBuffer(BaseBuffer):
 
 
     def update_value(self, policy, batch_size=1024):
-        self.values = th.empty(
-            (self.buffer_size * self.n_envs, 1), dtype=th.float32, device=self.device
-        )
+        # self.values = th.empty(
+        #     (self.buffer_size * self.n_envs), dtype=th.float32, device=self.device
+        # )
         start = 0
         size = len(self.observations)
         while start < size:
@@ -211,7 +211,7 @@ class CustomBuffer(BaseBuffer):
             data = self._get_samples(th.arange(start, end, device=self.device))
             with th.no_grad():
                 v, _ = policy.predict_value(data.observations)
-            self.values[start:end] = v
+            self.values[start:end] = v.flatten()
             start = end
         self.values = self.values
 
