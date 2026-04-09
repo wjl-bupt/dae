@@ -292,12 +292,14 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         
         # 3. 在多输出一个weights头，用于权衡不同的weights
         advantage_components = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True)))
-        weights = self.weights_heads(latent_adv)
-        advantages = (advantage_components * th.nn.functional.softmax(weights, dim = 1)).sum(1)
+        weights = th.nn.functional.softmax(self.weights_heads(latent_adv), dim = 1)
+        advantages = (advantage_components * weights).sum(1)
+        wdist_entropy = -(weights * th.log(weights + 1e-10)).sum(dim=1).mean()
+        
         
         values = self.value_net(latent_vf)
         
-        return values, advantages, log_policies, entropy, scores, divs, th.nn.functional.softmax(weights, dim = 1)
+        return values, advantages, log_policies, entropy, scores, divs, weights, wdist_entropy
         # return values, advantages, log_probs, distribution.entropy()
     
     def evaluate_state(
@@ -340,10 +342,10 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             values = self.value_net(self.value_feature_extractor(obs))
             return values, advantages
         else:
-            values, advantages, log_probs, entropy, scores, divs, fs = self.evaluate_actions(obs, actions, mu, log_std, noise)
+            values, advantages, log_probs, entropy, scores, divs, fs, wdist_entropy = self.evaluate_actions(obs, actions, mu, log_std, noise)
             # build \pi-centered advantage constrant
             # advantages = advantages - advantages_mu
             if return_all:
-                return values, advantages, scores, divs, fs
+                return values, advantages, scores, divs, fs, wdist_entropy
 
             return values, advantages

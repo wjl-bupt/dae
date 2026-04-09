@@ -842,6 +842,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     scores,
                     divs,
                     fs,
+                    wdist_entropy,
                 ) = self.policy.predict_value(
                     data.observations, actions, mu, old_log_std, noise = data.noises, return_all = True
                 )
@@ -897,7 +898,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     use_lambda=True,
                 )
                 main_value_loss = 0.5 * (main_value_loss_1 + main_value_loss_2)
-                value_loss = self.vf_coef * main_value_loss + cur_corr_coef * (1 - corr) 
+                value_loss = self.vf_coef * main_value_loss + cur_corr_coef * (1 - corr) - 0.01 * wdist_entropy
                 # value_loss = self.vf_coef * value_loss + 0.1 * (1.0 / (advantages.std() + 1.0)).mean() 
                 # value_loss += (ex_adv**2).mean()
                 # value_loss = value_loss + 0.2 * (ex_adv**2).mean()
