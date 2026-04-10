@@ -262,22 +262,25 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         latent_vf = self.value_feature_extractor(obs)
         latent_adv = self.advantage_feature_extractor(obs)
         # shape is [Batch, act_dim]
-        fs = self.advantage_head(th.cat([latent_adv, actions], dim = 1))
+
         
         # ws = self.advantage_net(th.cat([latent_vf, actions], dim = 1))
         with th.no_grad():
             sigma = th.exp(log_std)
             scores =  - (actions - mu) / (sigma + 1e-12)
             # scores = scores.mean(dim = 1, keepdim = True)
-
+            az =  - scores
+        fs = self.advantage_head(th.cat([latent_adv, az], dim = 1))
+        
+        
         def f_single(x, w):
             inp = th.cat([w, x], dim=-1)
             return self.advantage_head(inp)
 
         # # with th.no_grad():
-        J = vmap(jacrev(f_single))(actions, latent_adv)  # [B,K,K]
+        J = vmap(jacrev(f_single))(az, latent_adv)  # [B,K,K]
         # divs = J.squeeze(1)
-        divs = J.diagonal(dim1=1,dim2=2)
+        divs = (1/(sigma + 1e-12)) * J.diagonal(dim1=1,dim2=2)
         
         # 1. 直接做均值或者sum
         # advantages = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True))).mean(1) 

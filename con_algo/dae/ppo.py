@@ -808,7 +808,7 @@ class CustomPPO(OnPolicyAlgorithm):
             use_gae_like = False,
         )
         # huber_loss_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
-        huber_loss_beta = 0.2
+        huber_loss_beta = 0.5
         self.policy.zero_grad(set_to_none=True)
         self.policy.optimizer.zero_grad(set_to_none=True)
         self.policy.optimizer_vf.zero_grad(set_to_none=True)
