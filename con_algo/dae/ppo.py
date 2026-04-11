@@ -879,7 +879,6 @@ class CustomPPO(OnPolicyAlgorithm):
                     # values,
                     last_values,
                     beta = huber_loss_beta,
-                    use_lambda=True,
                 )
                 main_value_loss_2, beta = self._value_loss(
                     rewards.split(lengths), 
@@ -890,7 +889,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     beta = huber_loss_beta,
                     use_lambda=True,
                 )
-                main_value_loss = 0.5 * (main_value_loss_1 + main_value_loss_2)
+                main_value_loss = main_value_loss_1 + main_value_loss_2
                 value_loss = self.vf_coef * main_value_loss + cur_corr_coef * (1 - corr)
                 # value_loss = self.vf_coef * value_loss + 0.1 * (1.0 / (advantages.std() + 1.0)).mean() 
                 # value_loss += (ex_adv**2).mean()
@@ -906,7 +905,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     th.stack(
                         [
                             th.norm(p.grad)
-                            for p in self.policy.parameters()
+                            for p in self.policy.modules_vf.parameters()
                             if p.grad is not None
                         ]
                     )
@@ -1058,7 +1057,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     th.stack(
                         [
                             th.norm(p.grad)
-                            for p in self.policy.parameters()
+                            for p in self.policy.modules_pi
                             if p.grad is not None
                         ]
                     )
