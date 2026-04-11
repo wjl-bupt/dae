@@ -879,6 +879,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     # values,
                     last_values,
                     beta = huber_loss_beta,
+                    use_lambda = True
                 )
                 main_value_loss_2, beta = self._value_loss(
                     rewards.split(lengths), 
@@ -1003,7 +1004,7 @@ class CustomPPO(OnPolicyAlgorithm):
             batch_size = self.batch_size, 
             gamma = self.gamma, 
             gae_like_lambda = self.gae_like_lambda,
-            use_gae_like = True,
+            use_gae_like = False,
         )
         
         # if self.advantage_normalization:
