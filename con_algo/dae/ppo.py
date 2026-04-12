@@ -774,6 +774,9 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("values/value_diff_p90", diff.quantile(0.9).item())
         gae_dae_corr = ((dae_advantages - dae_advantages.mean()) * (gae_advantages - gae_advantages.mean())).mean() / (dae_advantages.std() * gae_advantages.std() + 1e-10)
         self.logger.record("train/gae_dae_corr", gae_dae_corr.detach().cpu().mean().item())
+        
+        
+        
 
     def _train_separate(self) -> None:
         cur_corr_coef = self.corr_coef
@@ -874,9 +877,9 @@ class CustomPPO(OnPolicyAlgorithm):
                 main_value_loss_1, beta = self._value_loss(
                     rewards.split(lengths), 
                     advantages.split(lengths), 
-                    target_values.split(lengths),
+                    # target_values.split(lengths),
                     # pred_values.split(lengths), 
-                    # values,
+                    values,
                     last_values,
                     beta = huber_loss_beta,
                 )
@@ -1115,6 +1118,8 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("log_policies/policy_min", log_policies.sum(-1).detach().cpu().min().item())
         self.logger.record("log_policies/policy_max", log_policies.sum(-1).detach().cpu().max().item())
         self.logger.record("log_policies/policy_mean", log_policies.sum(-1).detach().cpu().mean().item())
+        
+        self.logger.record("advantage/advantage>0", (self.rollout_buffer.advantages > 0).float().mean().item())
 
     def train(self) -> None:
         """
