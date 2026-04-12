@@ -879,7 +879,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     advantages.split(lengths), 
                     # target_values.split(lengths),
                     # pred_values.split(lengths), 
-                    values,
+                    values.detach(),
                     last_values,
                     beta = huber_loss_beta,
                 )
