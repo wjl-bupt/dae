@@ -16,22 +16,21 @@ echo "Using config snapshot: $SNAPSHOT_CFG"
 THREADS=1
 LOGGING="--logging"
 USE_WANDB="--use_wandb"
-PROJECT="lambda_dae7"
+PROJECT="lambda_dae9"
 
 # Mujoco 环境列表
 ENVS=(
-    "Walker2d-v5"
-    "Humanoid-v5"
-    "InvertedDoublePendulum-v5"
     "HalfCheetah-v5"
     "Ant-v5"
     # "HumanoidStandup-v5"
     "Swimmer-v5"
-    "Pusher-v5"
+    "Walker2d-v5"
     "Hopper-v5"
-    
     "InvertedPendulum-v5"
+    "InvertedDoublePendulum-v5"
     "Reacher-v5"
+    "Pusher-v5"
+    "Humanoid-v5"
 )
 
 

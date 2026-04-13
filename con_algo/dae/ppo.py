@@ -23,6 +23,7 @@ from torch.optim  import Adam
 from gymnasium import spaces
 from con_algo.dae.policy import CustomActorCriticPolicy
 from con_algo.dae.buffer import CustomBuffer
+from con_algo.util import DiagGaussianDistribution
 from stable_baselines3.common.utils import obs_as_tensor, safe_mean
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
@@ -155,6 +156,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self.corr_coef_decay_threshold = 0.8
         self._vf_update_step = 0
         self.delay_A_update = delay_update
+        self.warm_up_stage = True
 
         if not shared:
             warnings.warn(
@@ -774,9 +776,6 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("values/value_diff_p90", diff.quantile(0.9).item())
         gae_dae_corr = ((dae_advantages - dae_advantages.mean()) * (gae_advantages - gae_advantages.mean())).mean() / (dae_advantages.std() * gae_advantages.std() + 1e-10)
         self.logger.record("train/gae_dae_corr", gae_dae_corr.detach().cpu().mean().item())
-        
-        
-        
 
     def _train_separate(self) -> None:
         cur_corr_coef = self.corr_coef
@@ -1121,6 +1120,146 @@ class CustomPPO(OnPolicyAlgorithm):
         
         self.logger.record("advantage/advantage>0", (self.rollout_buffer.advantages > 0).float().mean().item())
 
+
+    def _warm_up_collect_rollouts_(
+        self,
+        env: VecEnv,
+        callback: BaseCallback,
+        rollout_buffer: CustomBuffer,
+        n_rollout_steps: int,
+    ) -> bool:
+        """
+        Collect experiences using the current policy and fill a ``RolloutBuffer``.
+        The term rollout here refers to the model-free notion and should not
+        be used with the concept of rollout used in model-based RL or planning.
+
+        :param env: The training environment
+        :param callback: Callback that will be called at each step
+            (and at the beginning and end of the rollout)
+        :param rollout_buffer: Buffer to fill with rollouts
+        :param n_steps: Number of experiences to collect per environment
+        :return: True if function returned with at least `n_rollout_steps`
+            collected, False if callback terminated rollout prematurely.
+        """
+        obs = env.reset()
+        self._last_obs = obs
+
+        self.policy.eval()
+
+        rollout_buffer.reset()
+        
+        warm_up_dist = DiagGaussianDistribution(self.action_space.shape[0])
+
+        for _ in range(n_rollout_steps):
+            with th.no_grad():
+                # Convert to pytorch tensor
+                obs_tensor = th.as_tensor(self._last_obs, device=self.device)
+                values, _ = self.policy.predict_value(obs_tensor)
+                # 固定 mean = 0
+                mu = th.zeros((obs_tensor.shape[0], self.action_space.shape[0]), device=self.device)
+            
+                actions = warm_up_dist.proba_distribution(mu, self.policy.log_std).sample()
+            # actions = th.clamp(actions, self.policy.action_space.low, self.policy.action_space.high).cpu().numpy()
+            actions = actions.cpu().numpy()
+            mu = mu.cpu().numpy()
+            # np.clip(actions, self.policy.action_space.low, self.policy.action_space.high)
+            new_obs, rewards, dones, infos = env.step(
+                # actions
+                np.clip(actions, self.action_space.low, self.action_space.high)
+            )
+            self.num_timesteps += env.num_envs
+
+            # NOTE(junweiluo) reshape actions for discrete action space. But here action space is continuous.
+            # actions = actions.reshape(-1, 1)
+            # warm up stage only training value network.
+            log_policies = th.zeros(actions.shape)
+            noises = th.zeros(actions.shape)
+            rollout_buffer.add(
+                self._last_obs, actions, mu, rewards, dones, log_policies, values, noises,
+            )
+
+            self._last_obs = new_obs
+
+        with th.no_grad():
+            obs_tensor = th.as_tensor(new_obs, device=self.device)
+            values, _ = self.policy.predict_value(obs_tensor)
+        rollout_buffer.finalize(last_values=values)
+
+
+        # reset all environments to seperate warm up stage and training stage observation.
+        obs = env.reset()
+        self._last_obs = obs
+
+        return True
+
+    def _warm_up_value_training_(self,) -> None:
+        old_log_std = self.policy.log_std.detach()
+        # update old advantage to compute adaptive scale huber loss for value loss
+        self.rollout_buffer.update_advantage(
+            self.policy, 
+            log_std = old_log_std, 
+            batch_size =self.batch_size, 
+            gamma = self.gamma, 
+            gae_like_lambda = self.gae_like_lambda,
+            use_gae_like = False,
+        )
+        huber_loss_beta = 0.5
+        self.policy.zero_grad(set_to_none=True)
+        self.policy.optimizer.zero_grad(set_to_none=True)
+        self.policy.optimizer_vf.zero_grad(set_to_none=True)
+        self._vf_update_step  = 0
+        for epoch in range(self.n_epochs_vf):
+            with th.no_grad():
+                self.rollout_buffer.update_value(self.policy)
+            for data in self.rollout_buffer.get_trajs(batch_size=512):
+                old_log_policies = data.old_log_policies
+                actions = data.actions
+                mu = data.mu
+                rewards = data.rewards
+                last_values = data.last_values
+                lengths = data.lengths
+                target_values = data.values
+                target_advantages = data.advantages
+
+                (
+                    values, 
+                    advantages,
+                    scores,
+                    divs,
+                    fs,
+                    wdist_entropy,
+                ) = self.policy.predict_value(
+                    data.observations, actions, mu, old_log_std, noise = data.noises, return_all = True
+                )
+                # value loss
+                values = values.flatten().split(lengths)
+                pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
+                main_value_loss_1, beta = self._value_loss(
+                    rewards.split(lengths), 
+                    advantages.split(lengths), 
+                    target_values.split(lengths),
+                    # pred_values.split(lengths), 
+                    # th.cat(values).detach().split(lengths),
+                    last_values,
+                    beta = huber_loss_beta,
+                )
+                main_value_loss_2, beta = self._value_loss(
+                    rewards.split(lengths), 
+                    target_advantages.split(lengths), 
+                    pred_values.split(lengths), 
+                    # values,
+                    last_values,
+                    beta = huber_loss_beta,
+                    use_lambda=True,
+                )
+                main_value_loss = 0.5 * (main_value_loss_1 + main_value_loss_2)
+                value_loss = self.vf_coef * main_value_loss
+                # add a new loss penalty
+                self.policy.optimizer_vf.zero_grad(set_to_none=True)
+                value_loss.backward()
+                th.nn.utils.clip_grad_norm_(self.policy.modules_vf.parameters(), self.max_grad_norm)
+                self.policy.optimizer_vf.step()
+
     def train(self) -> None:
         """
         Update policy using the currently gathered rollout buffer.
@@ -1145,6 +1284,12 @@ class CustomPPO(OnPolicyAlgorithm):
         eval_log_path: Optional[str] = None,
         reset_num_timesteps: bool = True,
     ) -> "CustomPPO":
+        
+        if self.warm_up_stage:
+            self._n_updates = 0
+            self.warm_up_stage = False
+            self._warm_up_collect_rollouts_(self.env, callback, self.rollout_buffer, n_rollout_steps=self.n_steps)
+            self._warm_up_value_training_()
 
         return super(CustomPPO, self).learn(
             total_timesteps=total_timesteps,
