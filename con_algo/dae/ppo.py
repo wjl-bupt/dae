@@ -157,6 +157,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self._vf_update_step = 0
         self.delay_A_update = delay_update
         self.warm_up_stage = True
+        self.warm_up_steps = 100000
 
         if not shared:
             warnings.warn(
@@ -1141,23 +1142,17 @@ class CustomPPO(OnPolicyAlgorithm):
         :return: True if function returned with at least `n_rollout_steps`
             collected, False if callback terminated rollout prematurely.
         """
-        obs = env.reset()
-        self._last_obs = obs
 
         self.policy.eval()
-
         rollout_buffer.reset()
-        
         warm_up_dist = DiagGaussianDistribution(self.action_space.shape[0])
-
         for _ in range(n_rollout_steps):
             with th.no_grad():
                 # Convert to pytorch tensor
                 obs_tensor = th.as_tensor(self._last_obs, device=self.device)
                 values, _ = self.policy.predict_value(obs_tensor)
                 # 固定 mean = 0
-                mu = th.zeros((obs_tensor.shape[0], self.action_space.shape[0]), device=self.device)
-            
+                mu = th.randn((obs_tensor.shape[0], self.action_space.shape[0]), device=self.device)
                 actions = warm_up_dist.proba_distribution(mu, self.policy.log_std).sample()
             # actions = th.clamp(actions, self.policy.action_space.low, self.policy.action_space.high).cpu().numpy()
             actions = actions.cpu().numpy()
@@ -1185,11 +1180,6 @@ class CustomPPO(OnPolicyAlgorithm):
             values, _ = self.policy.predict_value(obs_tensor)
         rollout_buffer.finalize(last_values=values)
 
-
-        # reset all environments to seperate warm up stage and training stage observation.
-        obs = env.reset()
-        self._last_obs = obs
-
         return True
 
     def _warm_up_value_training_(self,) -> None:
@@ -1211,7 +1201,7 @@ class CustomPPO(OnPolicyAlgorithm):
         for epoch in range(self.n_epochs_vf):
             with th.no_grad():
                 self.rollout_buffer.update_value(self.policy)
-            for data in self.rollout_buffer.get_trajs(batch_size=512):
+            for data in self.rollout_buffer.get_trajs(batch_size=self.batch_size_vf):
                 old_log_policies = data.old_log_policies
                 actions = data.actions
                 mu = data.mu
@@ -1221,28 +1211,29 @@ class CustomPPO(OnPolicyAlgorithm):
                 target_values = data.values
                 target_advantages = data.advantages
 
-                (
-                    values, 
-                    advantages,
-                    scores,
-                    divs,
-                    fs,
-                    wdist_entropy,
-                ) = self.policy.predict_value(
-                    data.observations, actions, mu, old_log_std, noise = data.noises, return_all = True
-                )
+                # (
+                #     values, 
+                #     advantages,
+                #     scores,
+                #     divs,
+                #     fs,
+                #     wdist_entropy,
+                # ) = self.policy.predict_value(
+                #     data.observations, actions, mu, old_log_std, noise = data.noises, return_all = True
+                # )
+                values = self.policy.value_net(self.policy.value_feature_extractor(data.observations))
                 # value loss
                 values = values.flatten().split(lengths)
                 pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
-                main_value_loss_1, beta = self._value_loss(
-                    rewards.split(lengths), 
-                    advantages.split(lengths), 
-                    target_values.split(lengths),
-                    # pred_values.split(lengths), 
-                    # th.cat(values).detach().split(lengths),
-                    last_values,
-                    beta = huber_loss_beta,
-                )
+                # main_value_loss_1, beta = self._value_loss(
+                #     rewards.split(lengths), 
+                #     advantages.split(lengths), 
+                #     target_values.split(lengths),
+                #     # pred_values.split(lengths), 
+                #     # th.cat(values).detach().split(lengths),
+                #     last_values,
+                #     beta = huber_loss_beta,
+                # )
                 main_value_loss_2, beta = self._value_loss(
                     rewards.split(lengths), 
                     target_advantages.split(lengths), 
@@ -1252,11 +1243,14 @@ class CustomPPO(OnPolicyAlgorithm):
                     beta = huber_loss_beta,
                     use_lambda=True,
                 )
-                main_value_loss = 0.5 * (main_value_loss_1 + main_value_loss_2)
-                value_loss = self.vf_coef * main_value_loss
+                main_value_loss = main_value_loss_2
+                value_loss = main_value_loss
                 # add a new loss penalty
                 self.policy.optimizer_vf.zero_grad(set_to_none=True)
                 value_loss.backward()
+                for p in self.policy.advantage_head.parameters():
+                    if p.grad is not None:
+                        p.grad = None
                 th.nn.utils.clip_grad_norm_(self.policy.modules_vf.parameters(), self.max_grad_norm)
                 self.policy.optimizer_vf.step()
 
@@ -1288,8 +1282,18 @@ class CustomPPO(OnPolicyAlgorithm):
         if self.warm_up_stage:
             self._n_updates = 0
             self.warm_up_stage = False
-            self._warm_up_collect_rollouts_(self.env, callback, self.rollout_buffer, n_rollout_steps=self.n_steps)
-            self._warm_up_value_training_()
+            current_warm_up_steps = 0
+            obs = self.env.reset()
+            self._last_obs = obs
+            while(True):
+                self._warm_up_collect_rollouts_(self.env, callback, self.rollout_buffer, n_rollout_steps=self.n_steps)
+                self._warm_up_value_training_()
+                current_warm_up_steps += self.n_steps * self.env.num_envs
+                if current_warm_up_steps >= self.warm_up_steps:
+                    # reset all environments to seperate warm up stage and training stage observation.
+                    obs = self.env.reset()
+                    self._last_obs = obs
+                    break
 
         return super(CustomPPO, self).learn(
             total_timesteps=total_timesteps,

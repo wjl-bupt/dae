@@ -249,7 +249,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
     def evaluate_actions(
         self, obs: th.Tensor, actions: th.Tensor, 
         mu: th.Tensor, log_std: th.Tensor,
-        noise: th.Tensor, epsilon:float = 1e-8,
+        scores: th.Tensor, epsilon:float = 1e-8,
     ) -> Tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
         latent_pi, _ = self._extract_latent(obs)
         mean_actions = self.action_net(latent_pi)
@@ -269,18 +269,17 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             sigma = th.exp(log_std)
             scores =  - (actions - mu) / (sigma + 1e-12)
             # scores = scores.mean(dim = 1, keepdim = True)
-            az =  - scores
-        fs = self.advantage_head(th.cat([latent_adv, az], dim = 1))
-        
+            # az =  - scores
+        fs = self.advantage_head(th.cat([latent_adv, actions], dim = 1))
         
         def f_single(x, w):
             inp = th.cat([w, x], dim=-1)
             return self.advantage_head(inp)
 
         # # with th.no_grad():
-        J = vmap(jacrev(f_single))(az, latent_adv)  # [B,K,K]
-        # divs = J.squeeze(1)
-        divs = (1/(sigma + 1e-12)) * J.diagonal(dim1=1,dim2=2)
+        J = vmap(jacrev(f_single))(actions, latent_adv)  # [B,K,K]
+        # divs = J.squeeze(1) 
+        divs = J.diagonal(dim1=1,dim2=2)
         
         # 1. 直接做均值或者sum
         # advantages = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True))).mean(1) 
