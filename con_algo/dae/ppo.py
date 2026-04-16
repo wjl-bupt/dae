@@ -157,7 +157,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self._vf_update_step = 0
         self.delay_A_update = delay_update
         self.warm_up_stage = True
-        self.warm_up_steps = 100000
+        self.warm_up_steps = 50000
 
         if not shared:
             warnings.warn(
@@ -1199,9 +1199,9 @@ class CustomPPO(OnPolicyAlgorithm):
         self.policy.optimizer_vf.zero_grad(set_to_none=True)
         self._vf_update_step  = 0
         for epoch in range(self.n_epochs_vf):
-            with th.no_grad():
-                self.rollout_buffer.update_value(self.policy)
-            for data in self.rollout_buffer.get_trajs(batch_size=self.batch_size_vf):
+            # with th.no_grad():
+            #     self.rollout_buffer.update_value(self.policy)
+            for data in self.rollout_buffer.get_trajs(batch_size=512):
                 old_log_policies = data.old_log_policies
                 actions = data.actions
                 mu = data.mu
@@ -1224,7 +1224,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 values = self.policy.value_net(self.policy.value_feature_extractor(data.observations))
                 # value loss
                 values = values.flatten().split(lengths)
-                pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
+                pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.1, 0.1)
                 # main_value_loss_1, beta = self._value_loss(
                 #     rewards.split(lengths), 
                 #     advantages.split(lengths), 
