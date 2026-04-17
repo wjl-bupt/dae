@@ -350,7 +350,7 @@ class CustomPPO(OnPolicyAlgorithm):
             targets = th.cat(targets)
             if beta is None or th.isnan(th.tensor(beta)):
                 # raise ValueError(f"beta is too large: {beta}, sample shape is {targets.shape}, sample var is {targets.var(unbiased=False).item()}")
-                beta = targets.std().detach().item()
+                beta = 0.5 * targets.std().detach().item()
             # ping beta to 0.5
             loss = th.nn.functional.smooth_l1_loss(preds, targets, beta=beta, reduction="mean")
 
@@ -516,7 +516,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 gae_like_lambda = self.gae_like_lambda,
                 use_gae_like = True,
             )
-        huber_loss_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix,  self.gae_like_lambdadiscount_matrix, self.discount_vector)
+        huber_loss_beta = 0.5 * self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
         self._vf_update_step = 0
 
         for epoch in range(self.n_epochs):
@@ -810,8 +810,8 @@ class CustomPPO(OnPolicyAlgorithm):
             gae_like_lambda = self.gae_like_lambda,
             use_gae_like = False,
         )
-        # huber_loss_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
-        huber_loss_beta = 0.5
+        huber_loss_beta = 0.5 * self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
+        # huber_loss_beta = 0.5
         self.policy.zero_grad(set_to_none=True)
         self.policy.optimizer.zero_grad(set_to_none=True)
         self.policy.optimizer_vf.zero_grad(set_to_none=True)
