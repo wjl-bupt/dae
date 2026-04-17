@@ -810,8 +810,8 @@ class CustomPPO(OnPolicyAlgorithm):
             gae_like_lambda = self.gae_like_lambda,
             use_gae_like = False,
         )
-        huber_loss_beta = 0.5 * self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
-        # huber_loss_beta = 0.5
+        # huber_loss_beta = 0.5 * self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
+        huber_loss_beta = 0.6
         self.policy.zero_grad(set_to_none=True)
         self.policy.optimizer.zero_grad(set_to_none=True)
         self.policy.optimizer_vf.zero_grad(set_to_none=True)
@@ -984,6 +984,7 @@ class CustomPPO(OnPolicyAlgorithm):
             )
 
             target_returns.append(target)
+        
 
         returns = th.cat(target_returns)
         preds = th.cat(values)
@@ -993,6 +994,16 @@ class CustomPPO(OnPolicyAlgorithm):
             var_y =  th.tensor(0.0)
         explain_var =  np.nan if var_y == 0 else float(1 - th.var(returns - preds).item() / var_y)  
         self.logger.record("train/explained_variance", explain_var)
+        # NOTE(junweiluo): 统计相关性gae 和 DAE
+        gae_advantages = []
+        for td in td_error.split(lengths):
+            gae_advantages.append(self.lambda_discount_matrix[: len(td), : len(td)].matmul(td))
+        gae_advantages = th.cat(gae_advantages)
+        dae_advantages = self._compute_gae_like_advantages_(target_advantages, lengths)
+        gae_dae_corr = th.corrcoef(
+            th.stack([gae_advantages.flatten(), dae_advantages.flatten()])
+        )[0, 1].item()
+        self.logger.record("train/gae_dae_corr", gae_dae_corr)
         # NOTE(junweiluo): 记录一下value是否被低估了
         diff = (returns - preds).detach().cpu()
         self.logger.record("values/value_diff_media", diff.median().item())
@@ -1193,7 +1204,8 @@ class CustomPPO(OnPolicyAlgorithm):
             gae_like_lambda = self.gae_like_lambda,
             use_gae_like = False,
         )
-        huber_loss_beta = 0.5 * self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
+        # huber_loss_beta = 0.5 * self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
+        huber_loss_beta = 0.5
         self.policy.zero_grad(set_to_none=True)
         self.policy.optimizer.zero_grad(set_to_none=True)
         self.policy.optimizer_vf.zero_grad(set_to_none=True)
