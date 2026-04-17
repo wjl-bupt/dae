@@ -157,7 +157,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self._vf_update_step = 0
         self.delay_A_update = delay_update
         self.warm_up_stage = True
-        self.warm_up_steps = 50000
+        self.warm_up_steps = 10000
 
         if not shared:
             warnings.warn(
@@ -1152,7 +1152,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 obs_tensor = th.as_tensor(self._last_obs, device=self.device)
                 values, _ = self.policy.predict_value(obs_tensor)
                 # 固定 mean = 0
-                mu = th.randn((obs_tensor.shape[0], self.action_space.shape[0]), device=self.device)
+                mu = th.zeros((obs_tensor.shape[0], self.action_space.shape[0]), device=self.device)
                 actions = warm_up_dist.proba_distribution(mu, self.policy.log_std).sample()
             # actions = th.clamp(actions, self.policy.action_space.low, self.policy.action_space.high).cpu().numpy()
             actions = actions.cpu().numpy()
