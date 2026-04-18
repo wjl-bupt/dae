@@ -802,14 +802,14 @@ class CustomPPO(OnPolicyAlgorithm):
         # train for n_epochs epochs
         old_log_std = self.policy.log_std.detach()
         # update old advantage to compute adaptive scale huber loss for value loss
-        # self.rollout_buffer.update_advantage(
-        #     self.policy, 
-        #     log_std = old_log_std, 
-        #     batch_size =self.batch_size, 
-        #     gamma = self.gamma, 
-        #     gae_like_lambda = self.gae_like_lambda,
-        #     use_gae_like = False,
-        # )
+        self.rollout_buffer.update_advantage(
+            self.policy, 
+            log_std = old_log_std, 
+            batch_size =self.batch_size, 
+            gamma = self.gamma, 
+            gae_like_lambda = self.gae_like_lambda,
+            use_gae_like = False,
+        )
         # huber_loss_beta = 0.5 * self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
         huber_loss_beta = 0.5
         self.policy.zero_grad(set_to_none=True)
@@ -819,14 +819,14 @@ class CustomPPO(OnPolicyAlgorithm):
         for epoch in range(self.n_epochs_vf):
             with th.no_grad():
                 self.rollout_buffer.update_value(self.policy)
-                self.rollout_buffer.update_advantage(
-                    self.policy, 
-                    log_std = old_log_std, 
-                    batch_size =self.batch_size, 
-                    gamma = self.gamma, 
-                    gae_like_lambda = self.gae_like_lambda,
-                    use_gae_like = False,
-                )
+                # self.rollout_buffer.update_advantage(
+                #     self.policy, 
+                #     log_std = old_log_std, 
+                #     batch_size =self.batch_size, 
+                #     gamma = self.gamma, 
+                #     gae_like_lambda = self.gae_like_lambda,
+                #     use_gae_like = False,
+                # )
                         
             
             for data in self.rollout_buffer.get_trajs(batch_size=self.batch_size_vf):

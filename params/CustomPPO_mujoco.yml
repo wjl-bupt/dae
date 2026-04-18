@@ -20,7 +20,7 @@ learning_rate:
     init: 0.00015
     final: 0
     ftype: "linear"
-learning_rate_vf: 0.00015
+learning_rate_vf: 0.00010
 n_epochs: 10
 n_epochs_vf: 10
 n_steps: 128
