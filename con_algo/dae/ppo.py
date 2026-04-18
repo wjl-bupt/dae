@@ -156,7 +156,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self.corr_coef_decay_threshold = 0.8
         self._vf_update_step = 0
         self.delay_A_update = delay_update
-        self.warm_up_stage = True
+        self.warm_up_stage = False
         self.warm_up_steps = 10000
 
         if not shared:
@@ -802,16 +802,16 @@ class CustomPPO(OnPolicyAlgorithm):
         # train for n_epochs epochs
         old_log_std = self.policy.log_std.detach()
         # update old advantage to compute adaptive scale huber loss for value loss
-        self.rollout_buffer.update_advantage(
-            self.policy, 
-            log_std = old_log_std, 
-            batch_size =self.batch_size, 
-            gamma = self.gamma, 
-            gae_like_lambda = self.gae_like_lambda,
-            use_gae_like = False,
-        )
+        # self.rollout_buffer.update_advantage(
+        #     self.policy, 
+        #     log_std = old_log_std, 
+        #     batch_size =self.batch_size, 
+        #     gamma = self.gamma, 
+        #     gae_like_lambda = self.gae_like_lambda,
+        #     use_gae_like = False,
+        # )
         # huber_loss_beta = 0.5 * self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
-        huber_loss_beta = 0.6
+        huber_loss_beta = 0.5
         self.policy.zero_grad(set_to_none=True)
         self.policy.optimizer.zero_grad(set_to_none=True)
         self.policy.optimizer_vf.zero_grad(set_to_none=True)
@@ -819,7 +819,15 @@ class CustomPPO(OnPolicyAlgorithm):
         for epoch in range(self.n_epochs_vf):
             with th.no_grad():
                 self.rollout_buffer.update_value(self.policy)
-                
+                self.rollout_buffer.update_advantage(
+                    self.policy, 
+                    log_std = old_log_std, 
+                    batch_size =self.batch_size, 
+                    gamma = self.gamma, 
+                    gae_like_lambda = self.gae_like_lambda,
+                    use_gae_like = False,
+                )
+                        
             
             for data in self.rollout_buffer.get_trajs(batch_size=self.batch_size_vf):
                 old_log_policies = data.old_log_policies
@@ -878,8 +886,6 @@ class CustomPPO(OnPolicyAlgorithm):
                     rewards.split(lengths), 
                     advantages.split(lengths), 
                     target_values.split(lengths),
-                    # pred_values.split(lengths), 
-                    # th.cat(values).detach().split(lengths),
                     last_values,
                     beta = huber_loss_beta,
                 )

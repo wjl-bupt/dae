@@ -5,4 +5,4 @@ learning_rate:
     final: 0
     ftype: "linear"
 n_steps: 128
-nenvs: 32
+nenvs: 128
