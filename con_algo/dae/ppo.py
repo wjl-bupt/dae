@@ -816,9 +816,11 @@ class CustomPPO(OnPolicyAlgorithm):
         self.policy.optimizer.zero_grad(set_to_none=True)
         self.policy.optimizer_vf.zero_grad(set_to_none=True)
         self._vf_update_step  = 0
-        for epoch in range(self.n_epochs_vf):
-            with th.no_grad():
-                self.rollout_buffer.update_value(self.policy)
+        for epoch in range(1, self.n_epochs_vf + 1):
+            # for 2 epochs update value network
+            # if epoch % 2 == 0:
+            #     with th.no_grad():
+            #         self.rollout_buffer.update_value(self.policy)
                 # self.rollout_buffer.update_advantage(
                 #     self.policy, 
                 #     log_std = old_log_std, 
