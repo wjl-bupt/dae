@@ -810,17 +810,15 @@ class CustomPPO(OnPolicyAlgorithm):
             gae_like_lambda = self.gae_like_lambda,
             use_gae_like = False,
         )
-        # huber_loss_beta = 0.5 * self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
-        huber_loss_beta = 0.5
+        huber_loss_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
+        # huber_loss_beta = 0.5
         self.policy.zero_grad(set_to_none=True)
         self.policy.optimizer.zero_grad(set_to_none=True)
         self.policy.optimizer_vf.zero_grad(set_to_none=True)
         self._vf_update_step  = 0
         for epoch in range(1, self.n_epochs_vf + 1):
-            # for 2 epochs update value network
-            # if epoch % 2 == 0:
-            #     with th.no_grad():
-            #         self.rollout_buffer.update_value(self.policy)
+            with th.no_grad():
+                self.rollout_buffer.update_value(self.policy)
                 # self.rollout_buffer.update_advantage(
                 #     self.policy, 
                 #     log_std = old_log_std, 
@@ -829,8 +827,6 @@ class CustomPPO(OnPolicyAlgorithm):
                 #     gae_like_lambda = self.gae_like_lambda,
                 #     use_gae_like = False,
                 # )
-                        
-            
             for data in self.rollout_buffer.get_trajs(batch_size=self.batch_size_vf):
                 old_log_policies = data.old_log_policies
                 actions = data.actions
