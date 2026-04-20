@@ -105,11 +105,12 @@ class CustomPPO(OnPolicyAlgorithm):
         _init_setup_model: bool = True,
         nheads: int = 2,
         gae_like_lambda: float = 0.0,
-        use_sub_action_ratio: bool = True,
+        use_sub_action_ratio: bool = False,
         corr_coef: float = 0.2,
         use_huber_loss: bool = True,
         dual_clip_coef: float = 3.0,
         delay_update: int = 10,
+        decouple_av: bool = True,
     ):  
         super(CustomPPO, self).__init__(
             policy,
@@ -158,6 +159,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self.delay_A_update = delay_update
         self.warm_up_stage = False
         self.warm_up_steps = 10000
+        self.use_decouple_av = decouple_av
 
         if not shared:
             warnings.warn(
@@ -871,32 +873,33 @@ class CustomPPO(OnPolicyAlgorithm):
                 confidence_lambda = th.clamp(corr, 1e-5, 1.0).detach()
                 
                 # value loss
-                # main_value_loss, beta = self._value_loss(
-                #     rewards.split(lengths), 
-                #     (confidence_lambda * advantages).split(lengths), 
-                #     pred_values.split(lengths), 
-                #     # values,
-                #     last_values,
-                #     beta = huber_loss_beta,
-                # )
-                # value_loss = self.vf_coef * main_value_loss + cur_corr_coef * (1 - corr) 
-                main_value_loss_1, beta = self._value_loss(
-                    rewards.split(lengths), 
-                    advantages.split(lengths), 
-                    target_values.split(lengths),
-                    last_values,
-                    beta = huber_loss_beta,
-                )
-                main_value_loss_2, beta = self._value_loss(
-                    rewards.split(lengths), 
-                    target_advantages.split(lengths), 
-                    pred_values.split(lengths), 
-                    # values,
-                    last_values,
-                    beta = huber_loss_beta,
-                    use_lambda=True,
-                )
-                main_value_loss = 0.5 * (main_value_loss_1 + main_value_loss_2)
+                if self.use_decouple_av == False:
+                    main_value_loss, beta = self._value_loss(
+                        rewards.split(lengths), 
+                        advantages.split(lengths), 
+                        pred_values.split(lengths), 
+                        # values,
+                        last_values,
+                        beta = huber_loss_beta,
+                    )
+                else:
+                    main_value_loss_1, beta = self._value_loss(
+                        rewards.split(lengths), 
+                        advantages.split(lengths), 
+                        target_values.split(lengths),
+                        last_values,
+                        beta = huber_loss_beta,
+                    )
+                    main_value_loss_2, beta = self._value_loss(
+                        rewards.split(lengths), 
+                        target_advantages.split(lengths), 
+                        pred_values.split(lengths), 
+                        # values,
+                        last_values,
+                        beta = huber_loss_beta,
+                        use_lambda=True,
+                    )
+                    main_value_loss = 0.5 * (main_value_loss_1 + main_value_loss_2)
                 value_loss = self.vf_coef * main_value_loss + cur_corr_coef * (1 - corr)
                 # value_loss = self.vf_coef * value_loss + 0.1 * (1.0 / (advantages.std() + 1.0)).mean() 
                 # value_loss += (ex_adv**2).mean()
