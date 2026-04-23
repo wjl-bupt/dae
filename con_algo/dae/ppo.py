@@ -111,6 +111,8 @@ class CustomPPO(OnPolicyAlgorithm):
         dual_clip_coef: float = 3.0,
         delay_update: int = 10,
         decouple_av: bool = True,
+        use_adaptive_scale_beta: bool = True,
+        huber_loss_beta: float = 0.5,
     ):  
         super(CustomPPO, self).__init__(
             policy,
@@ -132,6 +134,7 @@ class CustomPPO(OnPolicyAlgorithm):
             # create_eval_env=create_eval_env,
             seed=seed,
             _init_setup_model=False,
+
             # NOTE(junweiluo): 
             supported_action_spaces=(spaces.Box, ),
             
@@ -160,6 +163,8 @@ class CustomPPO(OnPolicyAlgorithm):
         self.warm_up_stage = False
         self.warm_up_steps = 10000
         self.use_decouple_av = decouple_av
+        self.use_adaptive_scale_beta = use_adaptive_scale_beta
+        self.huber_loss_beta = huber_loss_beta 
 
         if not shared:
             warnings.warn(
@@ -812,7 +817,10 @@ class CustomPPO(OnPolicyAlgorithm):
             gae_like_lambda = self.gae_like_lambda,
             use_gae_like = False,
         )
-        huber_loss_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
+        if self.use_adaptive_scale_beta:
+            huber_loss_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
+        else:
+            huber_loss_beta = self.huber_loss_beta
         # huber_loss_beta = 0.5
         self.policy.zero_grad(set_to_none=True)
         self.policy.optimizer.zero_grad(set_to_none=True)
