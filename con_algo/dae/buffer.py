@@ -356,13 +356,14 @@ class CustomBuffer(BaseBuffer):
         traj_rew = self.rewards.split(self.lengths)
         traj_adv = self.advantages.split(self.lengths)
         traj_last_value = self.last_values
+        traj_values = self.advantages.split(self.lengths)
         target_returns = []
-        for r, a, l in zip(traj_rew, traj_adv, traj_last_value):
+        for r, a, l, v in zip(traj_rew, traj_adv, traj_last_value, traj_values):
             target = (
                 discount_matrix1[: len(r), : len(r)].matmul(r)
                 - discount_matrix2[: len(a), : len(a)].matmul(a)
                 + l * discount_vector[-len(r):]
-                # - a
+                - v
             )
             target_returns.append(target)
 

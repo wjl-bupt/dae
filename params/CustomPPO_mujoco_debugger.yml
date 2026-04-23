@@ -11,7 +11,7 @@ gae_like_lambda: 0.98
 use_sub_action_ratio: false
 decouple_av: false
 use_huber_loss: true
-use_adaptive_scale_beta: false
+use_adaptive_scale_beta: true
 huber_loss_beta: 0.5
 dae_discouple_correction: false
 dual_clip_coef: 2.0
