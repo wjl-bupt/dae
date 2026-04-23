@@ -164,7 +164,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self.warm_up_steps = 10000
         self.use_decouple_av = decouple_av
         self.use_adaptive_scale_beta = use_adaptive_scale_beta
-        self.huber_loss_beta = huber_loss_beta 
+        self.huber_loss_beta = None if self.use_adaptive_scale_beta else huber_loss_beta
 
         if not shared:
             warnings.warn(
@@ -818,7 +818,12 @@ class CustomPPO(OnPolicyAlgorithm):
             use_gae_like = False,
         )
         if self.use_adaptive_scale_beta:
-            huber_loss_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
+            new_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
+            if self.huber_loss_beta == None:
+                self.huber_loss_beta =  new_beta
+            else:
+                self.huber_loss_beta =  self.huber_loss_beta * 0.9 + 0.1 * new_beta 
+            huber_loss_beta = self.huber_loss_beta
         else:
             huber_loss_beta = self.huber_loss_beta
         # huber_loss_beta = 0.5
