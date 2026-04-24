@@ -822,7 +822,7 @@ class CustomPPO(OnPolicyAlgorithm):
             if self.huber_loss_beta == None:
                 self.huber_loss_beta =  new_beta
             else:
-                self.huber_loss_beta =  self.huber_loss_beta * 0.9 + 0.1 * new_beta 
+                self.huber_loss_beta =  self.huber_loss_beta * 0.95 + 0.05 * new_beta 
             huber_loss_beta = self.huber_loss_beta
         else:
             huber_loss_beta = self.huber_loss_beta
