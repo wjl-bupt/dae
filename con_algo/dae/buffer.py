@@ -367,8 +367,11 @@ class CustomBuffer(BaseBuffer):
             )
             target_returns.append(target)
 
-        target_returns = th.cat(target_returns)
-        beta = target_returns.std().detach().item()
+        targets = th.cat(target_returns)
+        abs_median = th.median(targets)
+        mad = th.median(th.abs(targets - abs_median))
+        beta = mad.item()
+        # beta = targets.std().detach().item()
         # if th.isnan(th.tensor(beta)):
         #     raise ValueError(f"beta is NaN: {beta}, sample shape is {targets.shape}, sample var is {targets.var(unbiased=False).item()}, target max value is {targets.max().item()}, target min value is {targets.min().item()}, traj adv max value is {max([a.max().item() for a in traj_adv])}, traj adv min value is {min([a.min().item() for a in traj_adv])}. last value max value is {max(traj_last_value)}, last value min value is {min(traj_last_value)}")
         return beta
