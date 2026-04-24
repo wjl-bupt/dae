@@ -23,9 +23,10 @@ ENVS=(
     "Ant-v5"
     # "HumanoidStandup-v5"
     "Swimmer-v5"
-    "Walker2d-v5"
-    "Pusher-v5"
-    "Humanoid-v5"
+    # "Walker2d-v5"
+    # "Pusher-v5"
+    # "Humanoid-v5"
+    "Reacher-v5"
 )
 
 
@@ -52,14 +53,13 @@ for ENV_ID in "${ENVS[@]}"; do
             --envs $ENV_ID \
             --threads $THREADS \
             $LOGGING \
-            $USE_WANDB \
             --continous \
             --project $PROJECT \
             --seed $SEED \
             --run_id $SEED  \
             --commit_id $COMMIT_ID \
             &
-            # 
+            # # $USE_WANDB \
     done
     wait
     echo "All Mujoco experiments finished."

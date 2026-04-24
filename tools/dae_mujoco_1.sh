@@ -16,15 +16,15 @@ echo "Using config snapshot: $SNAPSHOT_CFG"
 THREADS=1
 LOGGING="--logging"
 USE_WANDB="--use_wandb"
-PROJECT="lambda_dae7"
+PROJECT="lambda_dae9"
 
 # Mujoco 环境列表
 ENVS=(
     "HalfCheetah-v5"
     "Hopper-v5"
-    "InvertedDoublePendulum-v5"
+    # "InvertedDoublePendulum-v5"
     "InvertedPendulum-v5"
-    "Reacher-v5"
+    
 
 )
 
@@ -51,14 +51,13 @@ for ENV_ID in "${ENVS[@]}"; do
             --envs $ENV_ID \
             --threads $THREADS \
             $LOGGING \
-            $USE_WANDB \
             --continous \
             --project $PROJECT \
             --seed $SEED \
             --run_id $SEED  \
             --commit_id $COMMIT_ID \
             &
-            # 
+            #  $USE_WANDB \
     done
     wait
     echo "All Mujoco experiments finished."
