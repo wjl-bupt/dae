@@ -363,7 +363,6 @@ class CustomBuffer(BaseBuffer):
                 discount_matrix1[: len(r), : len(r)].matmul(r)
                 - discount_matrix2[: len(a), : len(a)].matmul(a)
                 + l * discount_vector[-len(r):]
-                - v
             )
             target_returns.append(target)
 
