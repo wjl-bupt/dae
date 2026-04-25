@@ -113,6 +113,7 @@ class CustomPPO(OnPolicyAlgorithm):
         decouple_av: bool = True,
         use_adaptive_scale_beta: bool = True,
         huber_loss_beta: float = 0.5,
+        use_ema: bool = True,
     ):  
         super(CustomPPO, self).__init__(
             policy,
@@ -165,6 +166,7 @@ class CustomPPO(OnPolicyAlgorithm):
         self.use_decouple_av = decouple_av
         self.use_adaptive_scale_beta = use_adaptive_scale_beta
         self.huber_loss_beta = None if self.use_adaptive_scale_beta else huber_loss_beta
+        self.use_ema = use_ema
 
         if not shared:
             warnings.warn(
@@ -818,12 +820,15 @@ class CustomPPO(OnPolicyAlgorithm):
             use_gae_like = False,
         )
         if self.use_adaptive_scale_beta:
-            new_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
-            if self.huber_loss_beta == None:
-                self.huber_loss_beta =  new_beta
+            if self.use_ema:
+                new_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
+                if self.huber_loss_beta == None:
+                    self.huber_loss_beta =  new_beta
+                else:
+                    self.huber_loss_beta =  self.huber_loss_beta * 0.90 + 0.1 * new_beta 
+                huber_loss_beta = self.huber_loss_beta
             else:
-                self.huber_loss_beta =  self.huber_loss_beta * 0.90 + 0.1 * new_beta 
-            huber_loss_beta = self.huber_loss_beta
+                huber_loss_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
         else:
             huber_loss_beta = self.huber_loss_beta
         # huber_loss_beta = 0.5
@@ -1024,6 +1029,10 @@ class CustomPPO(OnPolicyAlgorithm):
             th.stack([gae_advantages.flatten(), dae_advantages.flatten()])
         )[0, 1].item()
         self.logger.record("train/gae_dae_corr", gae_dae_corr)
+        gae_dae_single_time_corr = th.corrcoef(
+            th.stack([gae_advantages.flatten(), advantages.flatten()])
+        )[0, 1].item()
+        self.logger.record("train/gae_dae_single_time_corr", gae_dae_single_time_corr)
         # NOTE(junweiluo): 记录一下value是否被低估了
         diff = (returns - preds).detach().cpu()
         self.logger.record("values/value_diff_media", diff.median().item())

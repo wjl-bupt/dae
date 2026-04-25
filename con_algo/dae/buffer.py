@@ -225,7 +225,7 @@ class CustomBuffer(BaseBuffer):
             traj_noise = self.noises[s_ind:e_ind]
             with th.no_grad():
                 _, advantages = policy.predict_value(traj_obs, traj_actions, traj_mu, log_std, traj_noise)
-            if use_gae_like:
+            if use_gae_like and gae_like_lambda > 0:
                 lens = len(advantages)
                 gl = gamma * gae_like_lambda
                 for t in range(lens-2, -1, -1):

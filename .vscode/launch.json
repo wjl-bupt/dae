@@ -72,9 +72,9 @@
                 "--envs", "Humanoid-v5", 
                 "--threads", "4",
                 "--continous",
-                // "--use_wandb",
+                "--use_wandb",
                 // "--logging",
-                // "--project", "callback-test",
+                "--project", "callback-test",
                 
             ],
             "justMyCode": false,
