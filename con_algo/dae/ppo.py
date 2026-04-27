@@ -882,8 +882,8 @@ class CustomPPO(OnPolicyAlgorithm):
                 advantages_normalization = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
                 td_error_normalization = (td_error - td_error.mean()) / (td_error.std() + 1e-8)
                 td_loss = 0.5 * (advantages_normalization - td_error_normalization).square().mean()
-                corr = ((target_advantages - target_advantages.mean()) * (td_error - td_error.mean())).mean() \
-                    / (td_error.std(unbiased = False) * target_advantages.std(unbiased = False) + 1e-10)
+                corr = ((advantages - advantages.mean()) * (td_error - td_error.mean())).mean() \
+                    / (td_error.std(unbiased = False) * advantages.std(unbiased = False) + 1e-10)
                 td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                 #  + 0.1 * (1 - corr) 
                 # + cur_corr_coef * (1 - corr)
