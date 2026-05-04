@@ -1,4 +1,4 @@
-batch_size: 4096
+batch_size: 2048
 vf_coef: 0.5
 ent_coef: 0.0
 clip_range: 
@@ -10,9 +10,9 @@ learning_rate:
     init: 0.00015
     final: 0
     ftype: "linear"
-n_epochs: 6
+n_epochs: 10
 n_steps: 128
-nenvs: 32
+nenvs: 128
 # AMPPO Specific Param
 dynago_tau: 1.25
 dynago_p_star: 0.10

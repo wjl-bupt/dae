@@ -16,11 +16,11 @@ echo "Using config snapshot: $SNAPSHOT_CFG"
 THREADS=1
 LOGGING="--logging"
 USE_WANDB="--use_wandb"
-PROJECT="lambda_dae"
+PROJECT="lambda_dae9"
 
 # Mujoco 环境列表
 ENVS=(
-    "InvertedDoublePendulum-v5"
+    
     "HalfCheetah-v5"
     "Ant-v5"
     # "HumanoidStandup-v5"
@@ -28,6 +28,7 @@ ENVS=(
     "Walker2d-v5"
     "Hopper-v5"
     "InvertedPendulum-v5"
+    "InvertedDoublePendulum-v5"
     "Reacher-v5"
     "Pusher-v5"
     "Humanoid-v5"
@@ -49,7 +50,7 @@ for ENV_ID in "${ENVS[@]}"; do
         RUN_ID="${ENV_ID}_seed${SEED}"
         echo "Launching experiment: env=$ENV_ID seed=$SEED run_id=$RUN_ID"
 
-        CUDA_VISIBLE_DEVICES=2 \
+        CUDA_VISIBLE_DEVICES=0 \
         uv run python train.py \
             --algo $ALGO \
             --hparam_file $SNAPSHOT_CFG \

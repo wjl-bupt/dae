@@ -201,9 +201,9 @@ class CustomBuffer(BaseBuffer):
 
 
     def update_value(self, policy, batch_size=1024):
-        self.values = th.empty(
-            (self.buffer_size * self.n_envs, 1), dtype=th.float32, device=self.device
-        )
+        # self.values = th.empty(
+        #     (self.buffer_size * self.n_envs), dtype=th.float32, device=self.device
+        # )
         start = 0
         size = len(self.observations)
         while start < size:
@@ -211,11 +211,11 @@ class CustomBuffer(BaseBuffer):
             data = self._get_samples(th.arange(start, end, device=self.device))
             with th.no_grad():
                 v, _ = policy.predict_value(data.observations)
-            self.values[start:end] = v
+            self.values[start:end] = v.flatten()
             start = end
         self.values = self.values
 
-    def update_advantage(self, policy, batch_size=1024, log_std = None, gamma = 0.99, gae_like_lambda = 1.0):
+    def update_advantage(self, policy, batch_size=1024, log_std = None, gamma = 0.99, gae_like_lambda = 1.0, use_gae_like = False):
         start = 0
         size = len(self.observations)
         for _, (s_ind, e_ind) in enumerate(zip(self.start_indices, self.end_indices)):
@@ -225,11 +225,14 @@ class CustomBuffer(BaseBuffer):
             traj_noise = self.noises[s_ind:e_ind]
             with th.no_grad():
                 _, advantages = policy.predict_value(traj_obs, traj_actions, traj_mu, log_std, traj_noise)
-            lens = len(advantages)
-            gl = gamma * gae_like_lambda
-            for t in range(lens-2, -1, -1):
-                advantages[t] = advantages[t] + gl * advantages[t+1]
+            if use_gae_like and gae_like_lambda > 0:
+                lens = len(advantages)
+                gl = gamma * gae_like_lambda
+                for t in range(lens-2, -1, -1):
+                    advantages[t] = advantages[t] + gl * advantages[t+1]
             self.advantages[s_ind:e_ind] = advantages
+        
+        
         
         # while start < size:
         #     end = min(start + batch_size, size)
@@ -349,4 +352,26 @@ class CustomBuffer(BaseBuffer):
         )
 
 
+    def _get_huber_loss_beta(self, discount_matrix1, discount_matrix2,discount_vector):
+        traj_rew = self.rewards.split(self.lengths)
+        traj_adv = self.advantages.split(self.lengths)
+        traj_last_value = self.last_values
+        traj_values = self.advantages.split(self.lengths)
+        target_returns = []
+        for r, a, l, v in zip(traj_rew, traj_adv, traj_last_value, traj_values):
+            target = (
+                discount_matrix1[: len(r), : len(r)].matmul(r)
+                - discount_matrix2[: len(a), : len(a)].matmul(a)
+                + l * discount_vector[-len(r):]
+            )
+            target_returns.append(target)
 
+        targets = th.cat(target_returns)
+        # abs_median = th.median(targets)
+        # mad = th.median(th.abs(targets - abs_median))
+        # beta = 1.4826 * mad.item()
+        beta = targets.std().detach().item()
+        # if th.isnan(th.tensor(beta)):
+        #     raise ValueError(f"beta is NaN: {beta}, sample shape is {targets.shape}, sample var is {targets.var(unbiased=False).item()}, target max value is {targets.max().item()}, target min value is {targets.min().item()}, traj adv max value is {max([a.max().item() for a in traj_adv])}, traj adv min value is {min([a.min().item() for a in traj_adv])}. last value max value is {max(traj_last_value)}, last value min value is {min(traj_last_value)}")
+        return beta
+        

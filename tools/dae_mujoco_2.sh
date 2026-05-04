@@ -3,35 +3,32 @@
 # ----------------------------
 # 配置参数
 # ----------------------------
+
 COMMIT_ID=$1
 
-ALGO="PPO"
-HPARAM_FILE="/root/dae/params/PPO_mujoco.yml"
+ALGO="CustomPPO"
+HPARAM_FILE="/root/dae/params/CustomPPO_mujoco.yml"
 # 👇 新增：冻结配置
-SNAPSHOT_CFG=$(mktemp /root/dae/logs/PPO_mujoco_${COMMIT_ID}_XXXXXX.yml)
+SNAPSHOT_CFG=$(mktemp /root/dae/logs/CustomPPO_mujoco_${COMMIT_ID}_XXXXXX.yml)
 cp $HPARAM_FILE $SNAPSHOT_CFG
 
 echo "Using config snapshot: $SNAPSHOT_CFG"
-
 THREADS=1
 LOGGING="--logging"
 USE_WANDB="--use_wandb"
-PROJECT="lambda_dae9"
+PROJECT="lambda_dae7"
 
 # Mujoco 环境列表
 ENVS=(
-    "HalfCheetah-v5"
     "Ant-v5"
     # "HumanoidStandup-v5"
     "Swimmer-v5"
-    "Walker2d-v5"
-    "Hopper-v5"
-    "InvertedPendulum-v5"
-    "InvertedDoublePendulum-v5"
+    # "Walker2d-v5"
+    # "Pusher-v5"
+    # "Humanoid-v5"
     "Reacher-v5"
-    "Pusher-v5"
-    "Humanoid-v5"
 )
+
 
 # 运行的最大 seed 数量
 MAX_SEED=5
@@ -56,13 +53,13 @@ for ENV_ID in "${ENVS[@]}"; do
             --envs $ENV_ID \
             --threads $THREADS \
             $LOGGING \
-            $USE_WANDB \
             --continous \
             --project $PROJECT \
             --seed $SEED \
             --run_id $SEED  \
             --commit_id $COMMIT_ID \
             &
+            # # $USE_WANDB \
     done
     wait
     echo "All Mujoco experiments finished."

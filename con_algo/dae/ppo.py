@@ -8,6 +8,7 @@
 '''
 
 # 
+import math
 from typing import Any, Dict, Optional, Type, Union
 from functools import partial
 
@@ -22,6 +23,7 @@ from torch.optim  import Adam
 from gymnasium import spaces
 from con_algo.dae.policy import CustomActorCriticPolicy
 from con_algo.dae.buffer import CustomBuffer
+from con_algo.util import DiagGaussianDistribution
 from stable_baselines3.common.utils import obs_as_tensor, safe_mean
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
@@ -103,10 +105,15 @@ class CustomPPO(OnPolicyAlgorithm):
         _init_setup_model: bool = True,
         nheads: int = 2,
         gae_like_lambda: float = 0.0,
-        use_sub_action_ratio: bool = True,
+        use_sub_action_ratio: bool = False,
         corr_coef: float = 0.2,
         use_huber_loss: bool = True,
-        
+        dual_clip_coef: float = 3.0,
+        delay_update: int = 10,
+        decouple_av: bool = True,
+        use_adaptive_scale_beta: bool = True,
+        huber_loss_beta: float = 0.5,
+        use_ema: bool = True,
     ):  
         super(CustomPPO, self).__init__(
             policy,
@@ -128,6 +135,7 @@ class CustomPPO(OnPolicyAlgorithm):
             # create_eval_env=create_eval_env,
             seed=seed,
             _init_setup_model=False,
+
             # NOTE(junweiluo): 
             supported_action_spaces=(spaces.Box, ),
             
@@ -148,6 +156,17 @@ class CustomPPO(OnPolicyAlgorithm):
         self.learning_rate_vf = learning_rate_vf
         self.corr_coef = corr_coef
         self.use_huber_loss = use_huber_loss
+        self.dual_clip_coef = dual_clip_coef
+        # corr coef decay threshold, when progress remaining is smaller than this value, we start to decay the corr coef
+        self.corr_coef_decay_threshold = 0.8
+        self._vf_update_step = 0
+        self.delay_A_update = delay_update
+        self.warm_up_stage = False
+        self.warm_up_steps = 10000
+        self.use_decouple_av = decouple_av
+        self.use_adaptive_scale_beta = use_adaptive_scale_beta
+        self.huber_loss_beta = None if self.use_adaptive_scale_beta else huber_loss_beta
+        self.use_ema = use_ema
 
         if not shared:
             warnings.warn(
@@ -166,7 +185,7 @@ class CustomPPO(OnPolicyAlgorithm):
             device=self.device,
         )
         
-        self.gae_like_lambdadiscount_matrix = th.tensor(
+        self.lambda_discount_matrix = th.tensor(
             [
                 [0 if j < i else (self.gamma * self.gae_like_lambda) ** (j - i) for j in range(n_steps)]
                 for i in range(n_steps)
@@ -295,19 +314,23 @@ class CustomPPO(OnPolicyAlgorithm):
             update_learning_rate(optimizer, new_lr)
         self.logger.record(f"train/learning_rate{suffix}", new_lr)
 
-    def _normalize_advantage(self, advantages, policies = None, eps=1e-8):
+    def _normalize_advantage(self, advantages, policies = None, eps=1e-10):
 
         # return advantages / (advantages.std() + eps)
         return (advantages - advantages.mean() ) / (advantages.std() + eps)
 
-    def _value_loss(self, rewards, advantages, values, lasts):
+    def _value_loss(self, rewards, advantages, values, lasts, beta = None, use_lambda = False):
+        if use_lambda:
+            advantage_discount_matrix = self.lambda_discount_matrix
+        else:
+            advantage_discount_matrix = self.discount_matrix
         # use dae original mse loss
         if self.use_huber_loss == False:
             loss = th.cat(
                 [
                     (
                         self.discount_matrix[: len(r), : len(r)].matmul(r)
-                        - self.discount_matrix[: len(a), : len(a)].matmul(a)
+                        - advantage_discount_matrix[: len(a), : len(a)].matmul(a)
                         + l * self.discount_vector[-len(r) :]
                         - v
                     ).square()
@@ -318,7 +341,7 @@ class CustomPPO(OnPolicyAlgorithm):
             return loss, 0.0
         # use Adaptive Scale Huber Loss
         # \beta = Std(G_t)
-        # Loss = th.nn.functional.smooth_l1_loss
+        # Loss = th.nn.functional.smooth_l1_loss(preds, targets, beta=beta, reduction="mean")
         else:
             preds = []
             targets = []
@@ -334,8 +357,11 @@ class CustomPPO(OnPolicyAlgorithm):
 
             preds = th.cat(preds)
             targets = th.cat(targets)
-            beta = targets.std().detach().item()
-            loss = th.nn.functional.smooth_l1_loss(preds, targets, beta=beta)
+            if beta is None or th.isnan(th.tensor(beta)):
+                # raise ValueError(f"beta is too large: {beta}, sample shape is {targets.shape}, sample var is {targets.var(unbiased=False).item()}")
+                beta = 0.5 * targets.std().detach().item()
+            # ping beta to 0.5
+            loss = th.nn.functional.smooth_l1_loss(preds, targets, beta=beta, reduction="mean")
 
             return loss, beta
 
@@ -353,18 +379,64 @@ class CustomPPO(OnPolicyAlgorithm):
             if self.use_sub_action_ratio:
                 ratio = th.exp(logp - old_logp)
                 #  / self.action_space.shape[0]
-                adv = adv.unsqueeze(-1)
+                adv = adv.unsqueeze(-1) / self.action_space.shape[0]
                 policy_loss_1 = adv * ratio
                 policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
                 loss = -th.min(policy_loss_1, policy_loss_2).mean()
             else:
-                log_ratio = (logp - old_logp).sum(dim = 1)
-                ratio = log_ratio.exp()
+                # NOTE(junweiluo): try dimension-wise clipping, which is more stable for high-dim action space
+                # we call it double clipping. paper is https://arxiv.org/abs/2211.13227
+                
+                # dimension-wise clipping
+                # log_ratio = th.clamp(logp - old_logp, 
+                #         th.log(th.tensor(1 - clip_range)).item(), th.log(th.tensor(1 + clip_range)).item()
+                #     ).sum(dim = 1)
+                
+                log_ratio = logp - old_logp
+                ratio = log_ratio.sum(1).exp()
                 policy_loss_1 = adv * ratio
                 policy_loss_2 = adv * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
                 loss = -th.min(policy_loss_1, policy_loss_2).mean()
-            
+                
+                # use simple policy optimization loss form. paper is 
+                # log_ratio = logp - old_logp
+                # ratio = log_ratio.sum(1).exp()
+                # policy_loss_1 = adv * ratio
+                # policy_loss_2 = (adv.abs() * (ratio - 1).pow(2)) / (2 * max(clip_range, 1e-3))
+                # loss = - (policy_loss_1 - policy_loss_2).mean()
+                
+                # fpo++ type
+                # pos_mask = adv > 0
+                # neg_mask = adv <= 0
+                # log_ratio = logp - old_logp
+                # ratio = log_ratio.sum(1).exp()
+                # clipped_ratio = th.clamp(ratio, 1 - clip_range, 1 + clip_range)
+                # psi = th.zeros_like(adv)
+                # # ====== A > 0 ======
+                # psi_pos_1 = ratio * adv
+                # psi_pos_2 = clipped_ratio * adv
+                # psi[pos_mask] = th.min(psi_pos_1, psi_pos_2)[pos_mask]
+                # # ====== A <= 0 ======
+                # psi_neg = ratio * adv - ((adv.abs() / (2 * 0.1)) * (ratio - 1).pow(2)) 
+                # psi[neg_mask] = psi_neg[neg_mask]
+                # loss = -psi.mean()
+                
+                # dual clip in ppo
+                # log_ratio = logp - old_logp
+                # ratio = log_ratio.sum(1).exp()
+                # surr1 = ratio * adv
+                # surr2 = th.clamp(ratio, 1 - clip_range, 1 + clip_range) * adv
+                # clip1 = th.min(surr1, surr2)
+                # dual_clip =  self.dual_clip_coef * adv   # c * A（注意 A < 0）
+                # loss = th.where(
+                #     adv >= 0,
+                #     clip1,
+                #     th.max(clip1, dual_clip)
+                # )
 
+                # loss = -loss.mean()
+                
+            
         return loss, ratio
 
     def _compute_gae_like_advantages_(self, raw_advantages, lengths): 
@@ -391,12 +463,8 @@ class CustomPPO(OnPolicyAlgorithm):
         # reverse
         adv = th.flip(raw_advantages, dims=[0])
         done = th.flip(dones, dims=[0])
-
         out = th.zeros_like(adv)
-
         acc = th.zeros(1, device=device)
-
-        # ⚠️ 这里仍然是 loop，但在 GPU 上很快
         for t in range(B):
             acc = adv[t] + coef * (1 - done[t]) * acc
             out[t] = acc   
@@ -434,7 +502,6 @@ class CustomPPO(OnPolicyAlgorithm):
 
         return deltas
 
-
     def _train_shared(self) -> None:
 
         # Update optimizer learning rate
@@ -447,20 +514,31 @@ class CustomPPO(OnPolicyAlgorithm):
         losses, value_losses, pg_losses, kl_divs = [], [], [], []
         gnorm_max, gnorm_min = 0, float("inf")
         q_values = []
-        log_std = self.policy.log_std.detach()
-        # log_std = th.clamp(log_std, -4, 2)
+        old_log_std = self.policy.log_std.detach()
 
-        # with th.no_grad():
-        #     self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size, gamma = self.gamma, gae_like_lambda = self.gae_like_lambda)        
-
+        with th.no_grad():
+            self.rollout_buffer.update_advantage(
+                self.policy, 
+                log_std = old_log_std, 
+                batch_size =self.batch_size, 
+                gamma = self.gamma, 
+                gae_like_lambda = self.gae_like_lambda,
+                use_gae_like = True,
+            )
+        huber_loss_beta = 0.5 * self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
+        self._vf_update_step = 0
 
         for epoch in range(self.n_epochs):
-            with th.no_grad():
-                self.rollout_buffer.update_advantage(self.policy, log_std = log_std, batch_size =self.batch_size)
+            # with th.no_grad():
+            #     self.rollout_buffer.update_advantage(
+            #         self.policy, 
+            #         log_std = old_log_std, 
+            #         batch_size =self.batch_size, 
+            #         gamma = self.gamma, 
+            #         gae_like_lambda = self.gae_like_lambda,
+            #         use_gae_like = True,
+            #     )
             #     self.rollout_buffer.update_value(self.policy, batch_size =self.batch_size)
-            ex_advs = []
-            # if self.advantage_normalization:
-            #     self.rollout_buffer.advantages = (self.rollout_buffer.advantages - self.rollout_buffer.advantages.mean()) / (self.rollout_buffer.advantages.std() + 1e-8)
 
             for data in self.rollout_buffer.get_trajs(batch_size=self.batch_size):
                 # old_policies = data.old_policies
@@ -470,9 +548,8 @@ class CustomPPO(OnPolicyAlgorithm):
                 rewards = data.rewards
                 last_values = data.last_values
                 lengths = data.lengths
-                old_advantages = data.advantages
                 target_values = data.values
-                # log_std = data.noises
+                target_advantages = data.advantages
 
                 (
                     values,
@@ -482,75 +559,39 @@ class CustomPPO(OnPolicyAlgorithm):
                     scores,
                     divs,
                     fs,
-                ) = self.policy.evaluate_state(data.observations, actions, mu, log_std, log_std)
+                ) = self.policy.evaluate_state(data.observations, actions, mu, old_log_std, old_log_std)
+                update_A =  (self._vf_update_step % self.delay_A_update == 0) and (self._vf_update_step > 0)
+                if not update_A:
+                    advantages = advantages.detach()
+                else:
+                    advantages = advantages
 
                 # value loss
                 values = values.flatten().split(lengths)
                 
                 
-                # origin loss
-                if self.dae_discouple_correction == False:
-                    # - advantages
-                    deltas = (
-                        rewards - advantages
-                    ).split(lengths)
-                    # pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
-                    main_value_loss, beta = self._value_loss(
-                        rewards.split(lengths),
-                        advantages.split(lengths),
-                        values,
-                        last_values
-                    )
-                    advantages_ = advantages.detach().clone()
-                    td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = 0.99)
-                    td_loss = 0.5 * (advantages - td_error).square().mean()
-                    corr = ((advantages - advantages.mean()) * (td_error - td_error.mean())).mean() / (td_error.std(unbiased = False) * advantages.std(unbiased = False) + 1e-10)
-                    td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
-                    value_loss = main_value_loss + self.corr_coef * (1 - corr)
-                    # advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
-                # discouple loss
-                else:
-                    # discouple dae loss
-                    # 1. we train value network with dae-loss (advantage detach, value keep grad)
-                    #  \sum_{k=0}^{T-t-1} \gamma^{k}(r_{t+k} - \hat{A}_{t+k}.detach()) + \gamma^{T-t} V_{T-t+1} - V_{t}
-                    # 2. we add a regularization for td error: 
-                    #  (r_{t} + \gamma V_{t+1}^{target} - V_{t} - \hat{A}_{t})^2
-                    
-                    # calculate original dae loss with detach A(s,a)
-                    advantages_ = advantages.detach().clone()
-                    deltas = (rewards - old_advantages).split(lengths)
-                    pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
-                    main_value_loss, beta = self._value_loss(
-                        rewards.split(lengths),
-                        advantages.split(lengths),
-                        # values,
-                        pred_values.flatten().split(lengths), 
-                        last_values
-                    )
-                    main_value_loss = main_value_loss.mean()
-                    next_advantages = self.gamma * self.gae_like_lambda * th.roll(old_advantages, -1)
-                    next_advantages[th.cumsum(th.tensor(lengths), 0) - 1] = 0
-                    # main_value_loss = (main_value_loss / (div.pow(2) + 1e-10) + 2  * div.log()).mean()
-                    # calculate a auxlimary regularization for td error
-                    # don't optimizer combine loss
-                    td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = self.gamma)
-                    td_loss = (0.5 * (advantages - next_advantages - td_error).square()).mean()
-                    # td_loss = th.nn.functional.huber_loss(advanges_norm_, td_error_norm, delta = 1.0).mean()
-                    td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
-                    corr = ((advantages - advantages.mean()) * (td_error - td_error.mean())).mean() / (td_error.std(unbiased = False) * advantages.std(unbiased = False) + 1e-10)
-                    # 0.2 * td_error.var()  - 0.1 * advantages.var()
-                    # add a coef for td loss
-                    value_loss = main_value_loss + 0.1 * td_loss
-                    # advantages_ = self._compute_gae_like_advantages_(advantages_, lengths)
-
+                # - advantages
+                deltas = (
+                    rewards - advantages
+                ).split(lengths)
+                pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
+                main_value_loss, beta = self._value_loss(
+                    rewards.split(lengths),
+                    advantages.split(lengths),
+                    # target_values.split(lengths),
+                    pred_values.split(lengths),
+                    last_values,
+                    huber_loss_beta,
+                )
                 
-                # kl divergence
-                # kl_loss = (
-                #     (old_policies * (old_log_policies - log_policies)).sum(dim=1).mean()
-                # )
-
+                advantages_ = advantages.detach().clone()
+                td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = 0.99)
+                td_loss = 0.5 * (advantages - td_error).square().mean()
+                corr = ((advantages - advantages.mean()) * (td_error - td_error.mean())).mean() / (td_error.std(unbiased = False) * advantages.std(unbiased = False) + 1e-10)
+                td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
+                value_loss = main_value_loss + self.corr_coef * (1 - corr)
                 # normalize adv
-                advantages_ = old_advantages.clone()
+                advantages_ = target_advantages.clone()
                 if self.advantage_normalization:
                     advantages_norm = self._normalize_advantage(advantages_, policies = None)
 
@@ -582,6 +623,11 @@ class CustomPPO(OnPolicyAlgorithm):
                 losses.append(loss.item())
                 self.policy.optimizer.zero_grad(set_to_none=True)
                 loss.backward()
+                
+                if not update_A:
+                    for p in self.policy.advantage_head.parameters():
+                        if p.grad is not None:
+                            p.grad = None
                 gnorm = th.norm(
                     th.stack(
                         [
@@ -609,6 +655,9 @@ class CustomPPO(OnPolicyAlgorithm):
 
                 # ex_advs.extend(ex_adv.detach().cpu().numpy().flatten().tolist())
                 self._n_updates += 1
+                self._vf_update_step += 1
+
+                
             
             # if kl_loss.mean().item() >= 0.05:
             #     break
@@ -634,8 +683,8 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
         self.logger.record("train/ratio_mean", ratio.detach().cpu().mean().item())
         # self.logger.record("train/trace", trace.cpu().mean().item())
-        self.logger.record("train/log_std", log_std.mean().item())  
-        self.logger.record("train/std", log_std.exp().mean().item()) 
+        self.logger.record("train/log_std", old_log_std.mean().item())  
+        self.logger.record("train/std", old_log_std.exp().mean().item()) 
         self.logger.record("train/td_loss", td_loss.detach().cpu().mean().item())
         self.logger.record("train/td_direct_corr", td_direct_corr.detach().cpu().mean().item())
         self.logger.record("train/rew_adv_delta", th.cat(deltas).detach().cpu().mean().item())
@@ -704,29 +753,39 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("scores/scores_mean", scores.detach().cpu().mean().item())
         self.logger.record("scores/scores_min", scores.detach().cpu().min().item())
         self.logger.record("scores/scores_std", scores.detach().cpu().std().item())
+        self.logger.record("train/huber_loss_beta", beta)
+        
         # 计算一下value network的评估是否准确
         targets = []
         preds = []
-
-        for d, v, l in zip(deltas, values, last_values):
-
+        # deltas = (rewards - advantages).split(lengths)
+        
+        for d, v, l in zip(td_error.split(lengths), values, last_values):
             target = (
-                self.discount_matrix[:len(d), :len(d)].matmul(d)
-                + l * self.discount_vector[-len(d):]
+                self.gae_like_lambdadiscount_matrix[: len(d), : len(d)].matmul(d)
+                # + l * self.discount_vector[-len(d):]
             )
 
             targets.append(target)
             preds.append(v)
 
-        targets = th.cat(targets)
+        gae_advantages = th.cat(targets)
+        dae_advantages = self._compute_gae_like_advantages_(target_advantages, lengths)
+        dae_advantages = target_advantages.detach()
+        returns = dae_advantages + target_values
         preds = th.cat(preds)
-
-        var_y = th.var(targets)
+        var_y = th.var(returns).item()
         if var_y < 1e-8:
             var_y =  th.tensor(0.0)
-
-        explain_var =  1 - th.var(targets - preds) / var_y  
-        self.logger.record("train/explained_variance", explain_var.cpu().mean().item())
+        explain_var =  np.nan if var_y == 0 else float(1 - th.var(returns - preds).item() / var_y)  
+        self.logger.record("train/explained_variance", explain_var)
+        # 记录一下value是否被低估
+        diff = (returns - preds).detach().cpu()
+        self.logger.record("values/value_diff_media", diff.median().item())
+        self.logger.record("values/value_diff_p50", diff.quantile(0.5).item())
+        self.logger.record("values/value_diff_p90", diff.quantile(0.9).item())
+        gae_dae_corr = ((dae_advantages - dae_advantages.mean()) * (gae_advantages - gae_advantages.mean())).mean() / (dae_advantages.std() * gae_advantages.std() + 1e-10)
+        self.logger.record("train/gae_dae_corr", gae_dae_corr.detach().cpu().mean().item())
 
     def _train_separate(self) -> None:
         cur_corr_coef = self.corr_coef
@@ -737,7 +796,10 @@ class CustomPPO(OnPolicyAlgorithm):
         self._update_learning_rate(
             self.policy.optimizer_vf, self.lr_schedule_vf, suffix="_vf"
         )
-
+    
+        
+        # cur_corr_coef = self.corr_coef * (max(0, self._current_progress_remaining - self.corr_coef_decay_threshold) / (1 - self.corr_coef_decay_threshold))
+        cur_corr_coef = self.corr_coef
         # Compute current clip range
         clip_range = self.clip_range(self._current_progress_remaining)
 
@@ -748,11 +810,43 @@ class CustomPPO(OnPolicyAlgorithm):
 
         # train for n_epochs epochs
         old_log_std = self.policy.log_std.detach()
-        
+        # update old advantage to compute adaptive scale huber loss for value loss
+        self.rollout_buffer.update_advantage(
+            self.policy, 
+            log_std = old_log_std, 
+            batch_size =self.batch_size, 
+            gamma = self.gamma, 
+            gae_like_lambda = self.gae_like_lambda,
+            use_gae_like = False,
+        )
+        if self.use_adaptive_scale_beta:
+            if self.use_ema:
+                new_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
+                if self.huber_loss_beta == None:
+                    self.huber_loss_beta =  new_beta
+                else:
+                    self.huber_loss_beta =  self.huber_loss_beta * 0.90 + 0.1 * new_beta 
+                huber_loss_beta = self.huber_loss_beta
+            else:
+                huber_loss_beta = self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
+        else:
+            huber_loss_beta = self.huber_loss_beta
+        # huber_loss_beta = 0.5
         self.policy.zero_grad(set_to_none=True)
         self.policy.optimizer.zero_grad(set_to_none=True)
         self.policy.optimizer_vf.zero_grad(set_to_none=True)
-        for epoch in range(self.n_epochs_vf):
+        self._vf_update_step  = 0
+        for epoch in range(1, self.n_epochs_vf + 1):
+            with th.no_grad():
+                self.rollout_buffer.update_value(self.policy)
+                # self.rollout_buffer.update_advantage(
+                #     self.policy, 
+                #     log_std = old_log_std, 
+                #     batch_size =self.batch_size, 
+                #     gamma = self.gamma, 
+                #     gae_like_lambda = self.gae_like_lambda,
+                #     use_gae_like = False,
+                # )
             for data in self.rollout_buffer.get_trajs(batch_size=self.batch_size_vf):
                 old_log_policies = data.old_log_policies
                 actions = data.actions
@@ -761,6 +855,7 @@ class CustomPPO(OnPolicyAlgorithm):
                 last_values = data.last_values
                 lengths = data.lengths
                 target_values = data.values
+                target_advantages = data.advantages
 
                 (
                     values, 
@@ -768,44 +863,84 @@ class CustomPPO(OnPolicyAlgorithm):
                     scores,
                     divs,
                     fs,
+                    wdist_entropy,
                 ) = self.policy.predict_value(
                     data.observations, actions, mu, old_log_std, noise = data.noises, return_all = True
                 )
+                update_A =  (self._vf_update_step % self.delay_A_update == 0)
+
+                if not update_A:
+                    advantages = advantages.detach()
+                else:
+                    advantages = advantages
                 # value loss
                 values = values.flatten().split(lengths)
                 pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.2, 0.2)
-                main_value_loss, beta = self._value_loss(
-                    rewards.split(lengths), 
-                    advantages.split(lengths), 
-                    pred_values.split(lengths), 
-                    # values,
-                    last_values,
-                )
+                # advantage loss
                 td_error = self._compute_td_error(rewards , target_values, target_values, last_values, lengths, gamma = 0.99)
-                td_loss = 0.5 * (advantages - td_error).square().mean()
+                # NOTE(junweiluo): 修改TD Loss的形式
+                advantages_normalization = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+                td_error_normalization = (td_error - td_error.mean()) / (td_error.std() + 1e-8)
+                td_loss = 0.5 * (advantages_normalization - td_error_normalization).square().mean()
                 corr = ((advantages - advantages.mean()) * (td_error - td_error.mean())).mean() \
                     / (td_error.std(unbiased = False) * advantages.std(unbiased = False) + 1e-10)
                 td_direct_corr = ((advantages * td_error) > 0).sum() / advantages.shape[0]
                 #  + 0.1 * (1 - corr) 
                 # + cur_corr_coef * (1 - corr)
-                value_loss = main_value_loss + cur_corr_coef * (1 - corr) 
+                # soft logits
+                confidence_lambda = th.clamp(corr, 1e-5, 1.0).detach()
+                
+                # value loss
+                if self.use_decouple_av == False:
+                    main_value_loss, beta = self._value_loss(
+                        rewards.split(lengths), 
+                        advantages.split(lengths), 
+                        pred_values.split(lengths), 
+                        # values,
+                        last_values,
+                        beta = huber_loss_beta,
+                    )
+                else:
+                    main_value_loss_1, beta = self._value_loss(
+                        rewards.split(lengths), 
+                        advantages.split(lengths), 
+                        target_values.split(lengths),
+                        last_values,
+                        beta = huber_loss_beta,
+                    )
+                    main_value_loss_2, beta = self._value_loss(
+                        rewards.split(lengths), 
+                        target_advantages.split(lengths), 
+                        pred_values.split(lengths), 
+                        # values,
+                        last_values,
+                        beta = huber_loss_beta,
+                        use_lambda=True,
+                    )
+                    main_value_loss = 0.5 * (main_value_loss_1 + main_value_loss_2)
+                value_loss = self.vf_coef * main_value_loss + cur_corr_coef * (1 - corr)
                 # value_loss = self.vf_coef * value_loss + 0.1 * (1.0 / (advantages.std() + 1.0)).mean() 
                 # value_loss += (ex_adv**2).mean()
                 # value_loss = value_loss + 0.2 * (ex_adv**2).mean()
                 # add a new loss penalty
                 self.policy.optimizer_vf.zero_grad(set_to_none=True)
                 value_loss.backward()
+                if not update_A:
+                    for p in self.policy.advantage_head.parameters():
+                        if p.grad is not None:
+                            p.grad = None
                 gnorm = th.norm(
                     th.stack(
                         [
                             th.norm(p.grad)
-                            for p in self.policy.parameters()
+                            for p in self.policy.modules_vf.parameters()
                             if p.grad is not None
                         ]
                     )
                 )
                 th.nn.utils.clip_grad_norm_(self.policy.modules_vf.parameters(), self.max_grad_norm)
                 self.policy.optimizer_vf.step()
+                self._vf_update_step += 1
 
                 # logging
                 value_losses.append(main_value_loss.item())
@@ -863,36 +998,55 @@ class CustomPPO(OnPolicyAlgorithm):
         self.logger.record("train/huber_loss_beta", beta)
         
         # 计算一下value network的评估是否准确
-        targets = []
-        preds = []
-        deltas = (rewards - advantages).split(lengths)
-        for d, v, l in zip(deltas, values, last_values):
-
+        target_returns = []
+        # deltas = (rewards - advantages).split(lengths)
+        
+        for r, a, l in zip(rewards.split(lengths), advantages.split(lengths), last_values):
             target = (
-                self.discount_matrix[: len(d), : len(d)].matmul(d)
-                + l * self.discount_vector[-len(d):]
+                self.discount_matrix[: len(r), : len(r)].matmul(r)
+                - self.discount_matrix[: len(a), : len(a)].matmul(a)
+                + l * self.discount_vector[-len(r):]
             )
 
-            targets.append(target)
-            preds.append(v)
+            target_returns.append(target)
+        
 
-        targets = th.cat(targets)
-        preds = th.cat(preds)
+        returns = th.cat(target_returns)
+        preds = th.cat(values)
 
-        var_y = th.var(targets)
+        var_y = th.var(returns).item()
         if var_y < 1e-8:
             var_y =  th.tensor(0.0)
-        explain_var =  1 - th.var(targets - preds) / (var_y + 1e-12)  
-        self.logger.record("train/explained_variance", explain_var.detach().cpu().mean().item())
-
-        # self.logger.record("tanh_sigma")
-
+        explain_var =  np.nan if var_y == 0 else float(1 - th.var(returns - preds).item() / var_y)  
+        self.logger.record("train/explained_variance", explain_var)
+        # NOTE(junweiluo): 统计相关性gae 和 DAE
+        gae_advantages = []
+        for td in td_error.split(lengths):
+            gae_advantages.append(self.lambda_discount_matrix[: len(td), : len(td)].matmul(td))
+        gae_advantages = th.cat(gae_advantages)
+        dae_advantages = self._compute_gae_like_advantages_(target_advantages, lengths)
+        gae_dae_corr = th.corrcoef(
+            th.stack([gae_advantages.flatten(), dae_advantages.flatten()])
+        )[0, 1].item()
+        self.logger.record("train/gae_dae_corr", gae_dae_corr)
+        gae_dae_single_time_corr = th.corrcoef(
+            th.stack([gae_advantages.flatten(), advantages.flatten()])
+        )[0, 1].item()
+        self.logger.record("train/gae_dae_single_time_corr", gae_dae_single_time_corr)
+        # NOTE(junweiluo): 记录一下value是否被低估了
+        diff = (returns - preds).detach().cpu()
+        self.logger.record("values/value_diff_media", diff.median().item())
+        self.logger.record("values/value_diff_p50", diff.quantile(0.5).item())
+        self.logger.record("values/value_diff_p90", diff.quantile(0.9).item())
+        
+        # NOTE(junweiluo): 更新buffer中的advantage，供policy使用
         self.rollout_buffer.update_advantage(
             self.policy, 
             log_std = old_log_std, 
-            batch_size =self.batch_size, 
+            batch_size = self.batch_size, 
             gamma = self.gamma, 
-            gae_like_lambda = self.gae_like_lambda
+            gae_like_lambda = self.gae_like_lambda,
+            use_gae_like = True,
         )
         
         # if self.advantage_normalization:
@@ -946,7 +1100,7 @@ class CustomPPO(OnPolicyAlgorithm):
                     th.stack(
                         [
                             th.norm(p.grad)
-                            for p in self.policy.parameters()
+                            for p in self.policy.modules_pi
                             if p.grad is not None
                         ]
                     )
@@ -998,11 +1152,148 @@ class CustomPPO(OnPolicyAlgorithm):
         # self.logger.record("train/tanh_std", (1 - tanh_mu.pow(2)) / (1 + (2 / th.sqrt(1 + (th.pi * sigma.pow(2) / 4)))))
         self.logger.record("train/std", old_log_std.cpu().exp().mean().item())
         self.logger.record("train/ratio", ratio.cpu().mean().item()) 
+        # self.logger.record("train/gae_like_lambda", current_gae_like_lambda)
         # self.logger.record("losses/lr_vf_", self.policy.optimizer_vf.param_groups[0]["lr"])
 
         self.logger.record("log_policies/policy_min", log_policies.sum(-1).detach().cpu().min().item())
         self.logger.record("log_policies/policy_max", log_policies.sum(-1).detach().cpu().max().item())
         self.logger.record("log_policies/policy_mean", log_policies.sum(-1).detach().cpu().mean().item())
+        
+        self.logger.record("advantage/advantage>0", (self.rollout_buffer.advantages > 0).float().mean().item())
+
+
+    def _warm_up_collect_rollouts_(
+        self,
+        env: VecEnv,
+        callback: BaseCallback,
+        rollout_buffer: CustomBuffer,
+        n_rollout_steps: int,
+    ) -> bool:
+        """
+        Collect experiences using the current policy and fill a ``RolloutBuffer``.
+        The term rollout here refers to the model-free notion and should not
+        be used with the concept of rollout used in model-based RL or planning.
+
+        :param env: The training environment
+        :param callback: Callback that will be called at each step
+            (and at the beginning and end of the rollout)
+        :param rollout_buffer: Buffer to fill with rollouts
+        :param n_steps: Number of experiences to collect per environment
+        :return: True if function returned with at least `n_rollout_steps`
+            collected, False if callback terminated rollout prematurely.
+        """
+
+        self.policy.eval()
+        rollout_buffer.reset()
+        warm_up_dist = DiagGaussianDistribution(self.action_space.shape[0])
+        for _ in range(n_rollout_steps):
+            with th.no_grad():
+                # Convert to pytorch tensor
+                obs_tensor = th.as_tensor(self._last_obs, device=self.device)
+                values, _ = self.policy.predict_value(obs_tensor)
+                # 固定 mean = 0
+                mu = th.zeros((obs_tensor.shape[0], self.action_space.shape[0]), device=self.device)
+                actions = warm_up_dist.proba_distribution(mu, self.policy.log_std).sample()
+            # actions = th.clamp(actions, self.policy.action_space.low, self.policy.action_space.high).cpu().numpy()
+            actions = actions.cpu().numpy()
+            mu = mu.cpu().numpy()
+            # np.clip(actions, self.policy.action_space.low, self.policy.action_space.high)
+            new_obs, rewards, dones, infos = env.step(
+                # actions
+                np.clip(actions, self.action_space.low, self.action_space.high)
+            )
+            self.num_timesteps += env.num_envs
+
+            # NOTE(junweiluo) reshape actions for discrete action space. But here action space is continuous.
+            # actions = actions.reshape(-1, 1)
+            # warm up stage only training value network.
+            log_policies = th.zeros(actions.shape)
+            noises = th.zeros(actions.shape)
+            rollout_buffer.add(
+                self._last_obs, actions, mu, rewards, dones, log_policies, values, noises,
+            )
+
+            self._last_obs = new_obs
+
+        with th.no_grad():
+            obs_tensor = th.as_tensor(new_obs, device=self.device)
+            values, _ = self.policy.predict_value(obs_tensor)
+        rollout_buffer.finalize(last_values=values)
+
+        return True
+
+    def _warm_up_value_training_(self,) -> None:
+        old_log_std = self.policy.log_std.detach()
+        # update old advantage to compute adaptive scale huber loss for value loss
+        self.rollout_buffer.update_advantage(
+            self.policy, 
+            log_std = old_log_std, 
+            batch_size =self.batch_size, 
+            gamma = self.gamma, 
+            gae_like_lambda = self.gae_like_lambda,
+            use_gae_like = False,
+        )
+        # huber_loss_beta = 0.5 * self.rollout_buffer._get_huber_loss_beta(self.discount_matrix, self.discount_matrix, self.discount_vector)
+        huber_loss_beta = 0.5
+        self.policy.zero_grad(set_to_none=True)
+        self.policy.optimizer.zero_grad(set_to_none=True)
+        self.policy.optimizer_vf.zero_grad(set_to_none=True)
+        self._vf_update_step  = 0
+        for epoch in range(1):
+            # with th.no_grad():
+            #     self.rollout_buffer.update_value(self.policy)
+            for data in self.rollout_buffer.get_trajs(batch_size=512):
+                old_log_policies = data.old_log_policies
+                actions = data.actions
+                mu = data.mu
+                rewards = data.rewards
+                last_values = data.last_values
+                lengths = data.lengths
+                target_values = data.values
+                target_advantages = data.advantages
+
+                # (
+                #     values, 
+                #     advantages,
+                #     scores,
+                #     divs,
+                #     fs,
+                #     wdist_entropy,
+                # ) = self.policy.predict_value(
+                #     data.observations, actions, mu, old_log_std, noise = data.noises, return_all = True
+                # )
+                values = self.policy.value_net(self.policy.value_feature_extractor(data.observations))
+                # value loss
+                values = values.flatten().split(lengths)
+                pred_values = target_values + th.clamp(th.cat(values) - target_values, - 0.1, 0.1)
+                # main_value_loss_1, beta = self._value_loss(
+                #     rewards.split(lengths), 
+                #     advantages.split(lengths), 
+                #     target_values.split(lengths),
+                #     # pred_values.split(lengths), 
+                #     # th.cat(values).detach().split(lengths),
+                #     last_values,
+                #     beta = huber_loss_beta,
+                # )
+                main_value_loss_2, beta = self._value_loss(
+                    rewards.split(lengths), 
+                    target_advantages.split(lengths), 
+                    pred_values.split(lengths), 
+                    # values,
+                    last_values,
+                    beta = huber_loss_beta,
+                    use_lambda=True,
+                )
+                main_value_loss = main_value_loss_2
+                value_loss = main_value_loss
+                # add a new loss penalty
+                self.policy.optimizer_vf.zero_grad(set_to_none=True)
+                value_loss.backward()
+                for p in self.policy.advantage_head.parameters():
+                    if p.grad is not None:
+                        p.grad = None
+                th.nn.utils.clip_grad_norm_(self.policy.modules_vf.parameters(), self.max_grad_norm)
+                self.policy.optimizer_vf.step()
 
     def train(self) -> None:
         """
@@ -1028,6 +1319,22 @@ class CustomPPO(OnPolicyAlgorithm):
         eval_log_path: Optional[str] = None,
         reset_num_timesteps: bool = True,
     ) -> "CustomPPO":
+        
+        if self.warm_up_stage:
+            self._n_updates = 0
+            self.warm_up_stage = False
+            current_warm_up_steps = 0
+            obs = self.env.reset()
+            self._last_obs = obs
+            while(True):
+                self._warm_up_collect_rollouts_(self.env, callback, self.rollout_buffer, n_rollout_steps=self.n_steps)
+                self._warm_up_value_training_()
+                current_warm_up_steps += self.n_steps * self.env.num_envs
+                if current_warm_up_steps >= self.warm_up_steps:
+                    # reset all environments to seperate warm up stage and training stage observation.
+                    obs = self.env.reset()
+                    self._last_obs = obs
+                    break
 
         return super(CustomPPO, self).learn(
             total_timesteps=total_timesteps,

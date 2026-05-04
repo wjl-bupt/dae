@@ -11,7 +11,7 @@ import math
 import torch as th
 import torch.nn as nn
 from functools import partial
-from typing import Optional, Tuple, Type, List, Union, Dict
+from typing import Optional, Tuple, Type, List, Union, Dict, Any
 import numpy as np 
 import gymnasium as gym
 # from functorch import vmap
@@ -26,8 +26,6 @@ from copy import deepcopy
 from con_algo.util import DiagGaussianDistribution, layer_init, SimBaEncoder
 from torch.distributions import Normal, Categorical
 from torch.func import jacrev
-
-
 
 
 class CustomActorCriticPolicy(ActorCriticPolicy):
@@ -45,6 +43,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         activation_fn : Optional[nn.Module] = nn.Tanh,
         nheads : int = 2,
         learning_rate_vf: float = 0.00015,
+        optimizer_kwargs: dict[str, Any] | None = None,
     ):
         self.nheads = nheads
         self.bins = 50
@@ -72,7 +71,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             features_extractor_kwargs=None,
             normalize_images=True,
             optimizer_class=th.optim.Adam,
-            optimizer_kwargs=None,
+            optimizer_kwargs=optimizer_kwargs,
         )
         # self.lr_vf = lr_schedule_vf(1) 
         self.high = th.from_numpy(self.action_space.high).float()
@@ -114,39 +113,31 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         self.advantage_activate_func = nn.Tanh()
         self.activate_func = nn.Tanh()
 
-        hidden_dim = 256
-        self.actor_feature_extractor = nn.Sequential(
-            # layer_init(nn.Linear(self.observation_space.shape[0], hidden_dim)),
-            # self.actor_activate_func,
-            # layer_init(nn.Linear(hidden_dim, hidden_dim)),
-            # self.actor_activate_func,
-            SimBaEncoder(input_dim = self.observation_space.shape[0], block_num = 2,
-                         hidden_dim = hidden_dim, activation = self.activate_func)
+        hidden_dim = 64
+        self.actor_feature_extractor = SimBaEncoder(
+            input_dim = self.observation_space.shape[0], block_num = 2,
+            hidden_dim = hidden_dim, activation = self.activate_func,
         )
         self.action_net = nn.Linear(hidden_dim, self.action_space.shape[0])
         # self.log_std = layer_init(nn.Linear(hidden_dim, self.action_space.shape[0]), std=0.01)
         self.log_std = nn.Parameter(th.zeros(self.action_space.shape[0]) * (-0.6931))
         self.value_feature_extractor = SimBaEncoder(
             input_dim = self.observation_space.shape[0], block_num = 2,
-            hidden_dim = hidden_dim, activation = self.activate_func
+            hidden_dim = hidden_dim, activation = self.activate_func,
         )
         self.value_net = nn.Linear(hidden_dim, 1)
-        # self.advantage_feature_extractor = SimBaEncoder(
-        #     input_dim = self.observation_space.shape[0], block_num = 2,
-        #     hidden_dim = hidden_dim, activation = self.advantage_activate_func,
-        # )
-        
-        # self.rank = self.nheads
-        # self.u_head = nn.Linear(hidden_dim, self.action_space.shape[0] * self.rank)
-        # self.b_head = nn.Linear(hidden_dim, self.action_space.shape[0])
-
+        self.advantage_feature_extractor = SimBaEncoder(
+            input_dim = self.observation_space.shape[0], block_num = 2,
+            hidden_dim = hidden_dim, activation = self.activate_func,
+        )
         self.advantage_head = nn.Sequential(
             nn.Linear(hidden_dim + self.action_space.shape[0] , hidden_dim * 2),
             self.advantage_activate_func,
+            nn.Linear(hidden_dim * 2 , hidden_dim * 2),
+            self.advantage_activate_func,
             nn.Linear(hidden_dim * 2, self.action_space.shape[0]),
         )
-        # self.log_sigma_state = nn.Linear(hidden_dim, 1)
-        # self.bs = nn.Linear(hidden_dim, 1)
+        # self.weights_heads = nn.Linear(hidden_dim, self.action_space.shape[0])
 
         # Init weights: use orthogonal initialization
         # with small initial weight for the output
@@ -158,10 +149,11 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             module_gains = {
                 self.actor_feature_extractor: np.sqrt(2),
                 self.value_feature_extractor: np.sqrt(2),
-                # self.advantage_feature_extractor : np.sqrt(2),
+                self.advantage_feature_extractor : np.sqrt(2),
                 self.action_net: 0.01,
                 self.value_net : 1.0,
                 self.advantage_head : 0.1,
+                # self.weights_heads : 0.01,
                 # self.log_sigma_state: 0.01,
             }
             for module, gain in module_gains.items():
@@ -179,12 +171,13 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             )
             # self.advantage_feature_extractor,
             self.modules_vf = nn.ModuleList(
-                [self.value_feature_extractor, 
+                [self.value_feature_extractor, self.advantage_feature_extractor,
                  self.value_net, self.advantage_head,
+                #  self.weights_heads,
             ])
             # self.lr_vf
             # we will use linear decay in ppo.py
-            self.optimizer_vf = Adam(
+            self.optimizer_vf = self.optimizer_class(
                 self.modules_vf.parameters(), lr = self.learning_rate_vf,
             )
         else:
@@ -256,7 +249,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
     def evaluate_actions(
         self, obs: th.Tensor, actions: th.Tensor, 
         mu: th.Tensor, log_std: th.Tensor,
-        noise: th.Tensor, epsilon:float = 1e-8,
+        scores: th.Tensor, epsilon:float = 1e-8,
     ) -> Tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
         latent_pi, _ = self._extract_latent(obs)
         mean_actions = self.action_net(latent_pi)
@@ -267,29 +260,45 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         entropy = dist.entropy()
         # shape is [B, B, D]
         latent_vf = self.value_feature_extractor(obs)
-        # latent_adv = self.advantage_feature_extractor(obs)
+        latent_adv = self.advantage_feature_extractor(obs)
         # shape is [Batch, act_dim]
-        fs = self.advantage_head(th.cat([latent_vf, actions], dim = 1))
+
+        
         # ws = self.advantage_net(th.cat([latent_vf, actions], dim = 1))
         with th.no_grad():
             sigma = th.exp(log_std)
             scores =  - (actions - mu) / (sigma + 1e-12)
-
+            # scores = scores.mean(dim = 1, keepdim = True)
+            # az =  - scores
+        fs = self.advantage_head(th.cat([latent_adv, actions], dim = 1))
+        
         def f_single(x, w):
             inp = th.cat([w, x], dim=-1)
             return self.advantage_head(inp)
 
         # # with th.no_grad():
-        J = vmap(jacrev(f_single))(actions, latent_vf)  # [B,K,K]
-        # divs = J.squeeze(1)
+        J = vmap(jacrev(f_single))(actions, latent_adv)  # [B,K,K]
+        # divs = J.squeeze(1) 
         divs = J.diagonal(dim1=1,dim2=2)
         
-        advantages = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True))).mean(1) 
+        # 1. 直接做均值或者sum
+        # advantages = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True))).mean(1) 
+        advantages = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True))).sum(1) 
+        
+        # 2. 使用平方和然后开方的方式，减少极端值影响
+        # advantage_components = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True)))
+        # advantages = th.sign(advantage_components.mean(1)) * th.sqrt(th.clamp(advantage_components.pow(2).mean(1), min=1e-10))
+        
+        # 3. 在多输出一个weights头，用于权衡不同的weights
+        # advantage_components = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True)))
+        # weights = th.nn.functional.softmax(self.weights_heads(latent_adv), dim = 1)
+        # advantages = (advantage_components * weights).sum(1)
+        # wdist_entropy = -(weights * th.log(weights + 1e-10)).sum(dim=1).mean()
+        
         
         values = self.value_net(latent_vf)
-        # sigma_state = self.log_sigma_state(latent_vf).exp().squeeze(-1)
         
-        return values, advantages, log_policies, entropy, scores, divs, fs
+        return values, advantages, log_policies, entropy, scores, divs, fs, 0
         # return values, advantages, log_probs, distribution.entropy()
     
     def evaluate_state(
@@ -332,10 +341,10 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             values = self.value_net(self.value_feature_extractor(obs))
             return values, advantages
         else:
-            values, advantages, log_probs, entropy, scores, divs, fs = self.evaluate_actions(obs, actions, mu, log_std, noise)
+            values, advantages, log_probs, entropy, scores, divs, fs, wdist_entropy = self.evaluate_actions(obs, actions, mu, log_std, noise)
             # build \pi-centered advantage constrant
             # advantages = advantages - advantages_mu
             if return_all:
-                return values, advantages, scores, divs, fs
+                return values, advantages, scores, divs, fs, wdist_entropy
 
             return values, advantages
