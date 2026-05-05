@@ -8,16 +8,16 @@ clip_range:
 ent_coef: 0.0
 full_action: false
 use_sub_action_ratio: false
-gae_like_lambda: 1.0
-decouple_av: true
-use_huber_loss: true
+gae_like_lambda: 0.95
+decouple_av: false
+use_huber_loss: false
 use_ema: false
-use_adaptive_scale_beta: true
+use_adaptive_scale_beta: false
 huber_loss_beta: 0.5
 dae_discouple_correction: false
 dual_clip_coef: 2.0
 kl_coef: 0.0
-vf_coef: 0.5
+vf_coef: 1.0
 corr_coef: 0.0
 delay_update: 1
 learning_rate:

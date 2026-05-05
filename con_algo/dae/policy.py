@@ -135,7 +135,7 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             self.advantage_activate_func,
             nn.Linear(hidden_dim * 2 , hidden_dim * 2),
             self.advantage_activate_func,
-            nn.Linear(hidden_dim * 2, self.action_space.shape[0]),
+            nn.Linear(hidden_dim * 2, 1),
         )
         # self.weights_heads = nn.Linear(hidden_dim, self.action_space.shape[0])
 
@@ -267,38 +267,18 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         # ws = self.advantage_net(th.cat([latent_vf, actions], dim = 1))
         with th.no_grad():
             sigma = th.exp(log_std)
-            scores =  - (actions - mu) / (sigma + 1e-12)
+            z =  - (actions - mu) / (sigma + 1e-12)
             # scores = scores.mean(dim = 1, keepdim = True)
             # az =  - scores
-        fs = self.advantage_head(th.cat([latent_adv, actions], dim = 1))
+            
+        f_z0 = self.advantage_head(th.cat([latent_adv, z], dim = 1))
+        f_z1 = self.advantage_head(th.cat([latent_adv, - z], dim = 1))
         
-        def f_single(x, w):
-            inp = th.cat([w, x], dim=-1)
-            return self.advantage_head(inp)
-
-        # # with th.no_grad():
-        J = vmap(jacrev(f_single))(actions, latent_adv)  # [B,K,K]
-        # divs = J.squeeze(1) 
-        divs = J.diagonal(dim1=1,dim2=2)
-        
-        # 1. 直接做均值或者sum
-        # advantages = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True))).mean(1) 
-        advantages = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True))).sum(1) 
-        
-        # 2. 使用平方和然后开方的方式，减少极端值影响
-        # advantage_components = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True)))
-        # advantages = th.sign(advantage_components.mean(1)) * th.sqrt(th.clamp(advantage_components.pow(2).mean(1), min=1e-10))
-        
-        # 3. 在多输出一个weights头，用于权衡不同的weights
-        # advantage_components = ((fs * scores + divs - (1 - sigma) * divs.mean(dim = 0, keepdim = True)))
-        # weights = th.nn.functional.softmax(self.weights_heads(latent_adv), dim = 1)
-        # advantages = (advantage_components * weights).sum(1)
-        # wdist_entropy = -(weights * th.log(weights + 1e-10)).sum(dim=1).mean()
-        
+        advantages = 0.5 * (f_z1 - f_z0).flatten()
         
         values = self.value_net(latent_vf)
         
-        return values, advantages, log_policies, entropy, scores, divs, fs, 0
+        return values, advantages, log_policies, entropy, scores, f_z0, f_z1, 0
         # return values, advantages, log_probs, distribution.entropy()
     
     def evaluate_state(
